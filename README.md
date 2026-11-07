@@ -36,6 +36,8 @@ automatically.
 
 - Windows 10/11 (taskbar UIA: `Shell_TrayWnd`, Win11 XAML buttons,
   classic `MSTaskListWClass`).
+- Win顺 0.22.0 or newer: this is a community native package (`exe`) and
+  the plugin library lists it as `unreviewed-native`.
 - The Win顺 host running this resident plugin (`volume.exe` must sit
   next to `plugin.json`).
 - Build from source with CMake + a C++17 compiler (MinGW-w64 or MSVC):
@@ -49,6 +51,29 @@ automatically.
   `plugin.json`; `tvb_tests.exe` and `VolumeTestTarget.exe` land in the
   build tree (`build/`, or `build/<config>/` with a multi-config
   generator such as Visual Studio).
+
+## Release and provenance
+
+`v0.1.1` is the source tag for the package attached to this repository's
+release. It is built from this repository at that tag with CMake 3.29,
+Ninja and MinGW-w64 GCC 13.2 (UCRT):
+
+```powershell
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+The exe is statically linked (the `-static` link option in
+[CMakeLists.txt](CMakeLists.txt)), so `volume.exe` does not need
+libstdc++/libgcc/winpthread DLLs on the target machine. The release
+archive `ra9fael.volume-0.1.1.wsplugin` contains `plugin.json`,
+`volume.exe`, this README and the LICENSE; its SHA-256 is in the release
+notes.
+
+This is a community native plugin: Win顺 0.22.0 or newer, and the plugin
+library marks it `unreviewed-native`. Installing and every update require
+the user's confirmation; the public source, build command and SHA-256
+document provenance but are not a code review.
 
 ## Permissions
 
