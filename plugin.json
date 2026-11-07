@@ -1,0 +1,108 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LingCore/WinShun-plugins/main/schema/plugin.schema.json",
+  "manifest": 1,
+  "id": "ra9fael.volume",
+  "name": {"zh": "任务栏音量", "en": "Taskbar volume"},
+  "version": "0.1.0",
+  "description": {
+    "zh": "Ctrl+滚轮悬停任务栏图标调单个应用音量，Ctrl+滚轮音量图标调总音量，Ctrl+左键切换静音；也支持 vol 关键字用键盘完成同样的事",
+    "en": "Ctrl+wheel over a taskbar icon adjusts that app's volume, over the volume icon adjusts master volume, Ctrl+click toggles mute; the vol keyword does the same from the keyboard"
+  },
+  "author": "ra9fael",
+  "homepage": "https://github.com/ra9fael/winshun-volume",
+  "license": "MIT",
+  "runtime": {
+    "mode": "resident",
+    "program": "volume.exe",
+    "start": "eager",
+    "idleExitSec": 0,
+    "timeoutMs": 1500,
+    "memoryMB": 512,
+    "sandbox": "normal"
+  },
+  "permissions": ["ui"],
+  "commands": [{
+    "id": "vol",
+    "keyword": ["vol", "音量"],
+    "title": {"zh": "音量", "en": "Volume"},
+    "description": {
+      "zh": "列出系统音量和各应用的音频会话；Enter 静音/取消，Ctrl+Enter 增大，Shift+Enter 减小",
+      "en": "List master volume and per-app audio sessions; Enter toggles mute, Ctrl+Enter up, Shift+Enter down"
+    },
+    "icon": "glyph:U+E767",
+    "hint": {"zh": "留空列出全部；输入应用名筛选", "en": "empty lists all; type an app name to filter"},
+    "actions": [
+      {"id": "toggleMute", "title": {"zh": "静音/取消静音", "en": "Toggle mute"}, "key": "Enter"},
+      {"id": "volumeUp", "title": {"zh": "增大音量", "en": "Volume up"}, "key": "Ctrl+Enter"},
+      {"id": "volumeDown", "title": {"zh": "减小音量", "en": "Volume down"}, "key": "Shift+Enter"}
+    ],
+    "ai": {
+      "description": "List the master volume and all per-application audio sessions of the default output device (name, process id, volume percent, muted). The query may be empty; otherwise it filters sessions whose name contains it. Read-only: nothing changes until an action runs."
+    }
+  }],
+  "settings": [
+    {
+      "key": "percentPerStep",
+      "type": "number",
+      "title": {"zh": "每格滚轮调整", "en": "Percent per wheel notch"},
+      "hint": {"zh": "1–10，默认 2", "en": "1–10, default 2"},
+      "default": 2
+    },
+    {
+      "key": "showOverlay",
+      "type": "bool",
+      "title": {"zh": "显示音量浮层", "en": "Show volume overlay"},
+      "default": true
+    },
+    {
+      "key": "overlayMs",
+      "type": "number",
+      "title": {"zh": "浮层停留毫秒", "en": "Overlay stay in ms"},
+      "hint": {"zh": "200–2000，默认 600", "en": "200–2000, default 600"},
+      "default": 600
+    },
+    {
+      "key": "overlayAnchor",
+      "type": "choice",
+      "title": {"zh": "浮层位置", "en": "Overlay position"},
+      "hint": {
+        "zh": "默认屏幕正中，可用下面的偏移继续微调；跟随鼠标在任务栏上可能被窗口预览挡住",
+        "en": "Center by default; nudge it with the offsets below. Follow-mouse may be covered by taskbar previews"
+      },
+      "options": [
+        {"value": "center", "title": {"zh": "屏幕正中", "en": "Center"}},
+        {"value": "top-left", "title": {"zh": "左上", "en": "Top left"}},
+        {"value": "top-center", "title": {"zh": "顶部居中", "en": "Top center"}},
+        {"value": "top-right", "title": {"zh": "右上", "en": "Top right"}},
+        {"value": "middle-left", "title": {"zh": "左侧居中", "en": "Middle left"}},
+        {"value": "middle-right", "title": {"zh": "右侧居中", "en": "Middle right"}},
+        {"value": "bottom-left", "title": {"zh": "左下", "en": "Bottom left"}},
+        {"value": "bottom-center", "title": {"zh": "底部居中", "en": "Bottom center"}},
+        {"value": "bottom-right", "title": {"zh": "右下", "en": "Bottom right"}},
+        {"value": "mouse", "title": {"zh": "跟随鼠标", "en": "Follow mouse"}}
+      ],
+      "default": "center"
+    },
+    {
+      "key": "overlayOffsetX",
+      "type": "number",
+      "title": {"zh": "浮层水平偏移", "en": "Overlay horizontal offset"},
+      "hint": {"zh": "相对上面位置的像素，-4000–4000，默认 0", "en": "Pixels from the anchor, -4000–4000, default 0"},
+      "default": 0
+    },
+    {
+      "key": "overlayOffsetY",
+      "type": "number",
+      "title": {"zh": "浮层垂直偏移", "en": "Overlay vertical offset"},
+      "hint": {"zh": "相对上面位置的像素，-4000–4000，默认 0", "en": "Pixels from the anchor, -4000–4000, default 0"},
+      "default": 0
+    },
+    {
+      "key": "enableMouse",
+      "type": "bool",
+      "title": {"zh": "启用鼠标手势", "en": "Enable mouse gestures"},
+      "hint": {"zh": "关闭后仅保留 vol 关键字查询", "en": "off leaves only the vol keyword query"},
+      "default": true
+    }
+  ]
+}
