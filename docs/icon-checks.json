@@ -1,0 +1,78 @@
+{
+  "name": "volume",
+  "exe_sha256": "74c79d2bc1dc237309cac35d07a3b23c1d65d579c70c6660f5794314a4853698",
+  "checks": [
+    {
+      "name": "Executable resources load",
+      "passed": true
+    },
+    {
+      "name": "Named icon group exists",
+      "passed": true,
+      "detail": [
+        "IDI_ICON1"
+      ]
+    },
+    {
+      "name": "Eight icon frames exist",
+      "passed": true,
+      "detail": 8
+    },
+    {
+      "name": "Embedded 16px icon loads",
+      "passed": true
+    },
+    {
+      "name": "Embedded 20px icon loads",
+      "passed": true
+    },
+    {
+      "name": "Embedded 24px icon loads",
+      "passed": true
+    },
+    {
+      "name": "Embedded 32px icon loads",
+      "passed": true
+    },
+    {
+      "name": "Embedded 40px icon loads",
+      "passed": true
+    },
+    {
+      "name": "Embedded 48px icon loads",
+      "passed": true
+    },
+    {
+      "name": "Embedded 64px icon loads",
+      "passed": true
+    },
+    {
+      "name": "Embedded 256px icon loads",
+      "passed": true
+    },
+    {
+      "name": "initialize returns a result",
+      "passed": true
+    },
+    {
+      "name": "Plugin initializes",
+      "passed": true,
+      "detail": "taskbar-volume"
+    },
+    {
+      "name": "query returns a result",
+      "passed": true
+    },
+    {
+      "name": "shutdown returns a result",
+      "passed": true
+    },
+    {
+      "name": "Plugin shuts down cleanly",
+      "passed": true,
+      "detail": 0
+    }
+  ],
+  "input": "Directed messages to owned plugin processes",
+  "passed": true
+}

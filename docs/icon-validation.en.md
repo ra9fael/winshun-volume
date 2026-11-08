@@ -16,8 +16,8 @@ Embed the executable icon and include the ICO and resource script in the package
 
 ## Measured
 
-Final build and window checks will be recorded before local packaging.
+2026-11-09: built a committed snapshot with MSVC 19.51 / x64 Release; CTest 1/1 passed. Resource and real plugin process checks: 16/16 passed (docs/icon-checks.json), including the named resource, eight sizes, protocol initialization and clean shutdown.
 
 ## Not tested
 
-This local icon fix does not constitute full hardware or desktop interaction acceptance.
+Physical taskbar/Alt+Tab interaction, every plugin feature, hardware paths, dragging across actual monitors, UAC secure desktop and all Windows versions were not retested. This run creates local tags and packages only; nothing is published.
