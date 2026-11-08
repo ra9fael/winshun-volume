@@ -1,0 +1,34 @@
+#pragma code_page(65001)
+#include <winver.h>
+
+// The exe icon, drawn from Phosphor speaker-high (U+E44A) by winshun-plugin-icons.
+// Window icons must explicitly load the string resource name IDI_ICON1.
+// Use WM_SETICON for both sizes; custom captions must draw the icon.
+IDI_ICON1 ICON "app.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 0,1,2,0
+ PRODUCTVERSION 0,1,2,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+ FILEFLAGS 0x0L
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "FileDescription", "任务栏音量 · Win顺 插件"
+            VALUE "FileVersion", "0.1.2"
+            VALUE "InternalName", "volume"
+            VALUE "OriginalFilename", "volume.exe"
+            VALUE "ProductName", "Win顺 · WinShun"
+            VALUE "ProductVersion", "0.1.2"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END

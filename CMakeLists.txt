@@ -12,6 +12,10 @@ if(NOT WIN32)
     message(FATAL_ERROR "TaskbarVolume builds on Windows only")
 endif()
 
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 add_executable(TaskbarVolume
     src/main.cpp
     src/mouse_logic.cpp
@@ -20,7 +24,12 @@ add_executable(TaskbarVolume
     src/taskbar_resolver.cpp
     src/mouse_hook.cpp
     src/overlay.cpp
+    volume.rc
 )
+if(MSVC)
+    set_target_properties(TaskbarVolume PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 target_include_directories(TaskbarVolume PRIVATE src)
 target_compile_definitions(TaskbarVolume PRIVATE
     UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN CRT_SECURE_NO_WARNINGS)
@@ -45,6 +54,7 @@ foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
 endforeach()
 
 enable_testing()
+
 add_executable(tvb_tests
     tests/test_main.cpp
     tests/test_mouse_logic.cpp
@@ -57,6 +67,7 @@ target_link_libraries(tvb_tests PRIVATE user32 gdi32)
 add_test(NAME tvb_tests COMMAND tvb_tests)
 
 # E2E helper: a controlled window + real audio session in one process.
+
 add_executable(VolumeTestTarget tools/VolumeTestTarget/main.cpp)
 target_compile_definitions(VolumeTestTarget PRIVATE
     UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN CRT_SECURE_NO_WARNINGS)

@@ -3,7 +3,7 @@
   "manifest": 1,
   "id": "ra9fael.volume",
   "name": {"zh": "任务栏音量", "en": "Taskbar volume"},
-  "version": "0.1.1",
+  "version": "0.1.2",
   "minWinShun": "0.22.0",
   "description": {
     "zh": "Ctrl+滚轮悬停任务栏图标调单个应用音量，Ctrl+滚轮音量图标调总音量，Ctrl+左键切换静音；也支持 vol 关键字用键盘完成同样的事",

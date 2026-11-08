@@ -16,7 +16,9 @@
 
 #include <appmodel.h>
 #include <dwmapi.h>
-#include <oleacc.h> // COM declarations required by the Windows SDK UIA headers.
+// UIAutomationCore.h's interfaces need the OLE accessibility declarations in
+// place first, or the SDK header fails to parse.
+#include <oleacc.h>
 #include <uiautomationclient.h>
 
 #include <map>
