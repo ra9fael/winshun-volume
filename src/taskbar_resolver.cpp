@@ -16,6 +16,7 @@
 
 #include <appmodel.h>
 #include <dwmapi.h>
+#include <oleacc.h> // COM declarations required by the Windows SDK UIA headers.
 #include <uiautomationclient.h>
 
 #include <map>
