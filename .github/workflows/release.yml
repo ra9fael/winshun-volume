@@ -1,0 +1,120 @@
+name: build-and-release
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Source branch/SHA to verify, or existing version tag to publish (empty uses selected ref)'
+        type: string
+        default: ''
+      publish:
+        description: 'Publish an existing version tag after verification'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.repository }}-${{ inputs.ref || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' || (github.event.created && !github.event.deleted)
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.meta.outputs.sha }}
+      tag: ${{ steps.meta.outputs.tag }}
+      publish: ${{ steps.meta.outputs.publish }}
+      version: ${{ steps.meta.outputs.version }}
+      variant: ${{ steps.meta.outputs.variant }}
+      qt: ${{ steps.meta.outputs.qt }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      host_repository: ${{ steps.meta.outputs.host_repository }}
+      host_ref: ${{ steps.meta.outputs.host_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate source and release identity
+        id: meta
+        run: python tools/ci_release.py
+  build:
+    needs: verify
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Configure
+        env:
+          VARIANT: ${{ needs.verify.outputs.variant }}
+        run: |
+          $options = @('-S', '.', '-B', 'build/ci', '-A', 'x64')
+          cmake @options
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build
+        run: cmake --build build/ci --config Release --parallel 2
+      - name: Run all existing tests
+        run: ctest --test-dir build/ci -C Release --output-on-failure --no-tests=error
+      - name: Package the tested binaries
+        env:
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          $options = @('tools/package.py', '--out', 'dist/ci')
+          if ($env:RELEASE_TAG) { $options += @('--tag', $env:RELEASE_TAG) }
+          python @options
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Verify package and checksum
+        run: python tools/ci_release.py dist/ci
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-package
+          path: dist/ci/
+          if-no-files-found: error
+  publish:
+    needs: [verify, build]
+    if: needs.verify.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-package
+          path: dist/ci
+      - name: Publish verified artifact without overwriting a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+          SOURCE_SHA: ${{ needs.verify.outputs.sha }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          VARIANT: ${{ needs.verify.outputs.variant }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$SOURCE_SHA"
+          python tools/ci_release.py dist/ci
+          if gh release view "$RELEASE_TAG" --json id >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to replace immutable assets.' >&2
+            exit 1
+          fi
+          flags=(--latest=true)
+          if [ "$PRERELEASE" = true ]; then flags=(--prerelease --latest=false);
+          elif [ "$VARIANT" = qml ]; then flags=(--latest=false); fi
+          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" "${flags[@]}" \
+            --notes-file dist/ci/release-notes.md dist/ci/*.wsplugin dist/ci/*.sha256
