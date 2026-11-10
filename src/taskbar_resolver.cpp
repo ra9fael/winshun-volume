@@ -21,6 +21,8 @@
 #include <oleacc.h>
 #include <uiautomationclient.h>
 
+#include <algorithm>
+#include <cstdio>
 #include <map>
 #include <string>
 #include <vector>
@@ -32,6 +34,7 @@ namespace {
 constexpr UINT kTimerMs = 1000; // fallback cadence
 constexpr UINT kDebounceMs = 180; // settle after the last event
 constexpr ULONGLONG kMaxDelayMs = 600; // a constant event stream must not starve
+constexpr ULONGLONG kHealMs = 5000; // retry a lost WinEvent hook / a failed UIA init
 
 bool isTaskbarRoot(HWND hwnd)
 {
@@ -172,11 +175,14 @@ std::wstring automationAppId(IUIAutomationElement* el)
 // "volume" and ends with the live value ("Volume BELLATOR N27Q (…): 65%").
 // Windows' UI language is independent of Win顺's locale, so cover the common
 // ones; English/Chinese are certain, the rest are best-effort translations.
+// This is only the fallback: the button is normally recognized by its class
+// name and automation id, which do not depend on the UI language.
 bool startsWithVolumeWord(const std::wstring& name)
 {
     static const wchar_t* const kWords[] = {
-        L"音量", L"Volume", L"Lautstärke", L"Volumen", L"Громкость", L"볼륨",
-        L"Głośność", L"Hlasitost", L"Ses"
+        L"音量", L"Volume", L"Volumen", L"Lautstärke", L"Громкость", L"볼륨",
+        L"Głośność", L"Hlasitost", L"Volume:", L"Ses", L"Volym", L"Äänenvoimakkuus",
+        L"Hangerő", L"Ses düzeyi", L"Poziom", L"Гучнасць", L"Гучність"
     };
     for (const wchar_t* word : kWords) {
         const std::wstring prefix(word);
@@ -184,6 +190,56 @@ bool startsWithVolumeWord(const std::wstring& name)
             return true;
     }
     return false;
+}
+
+// The tray volume button is the one XAML peer Explorer marks as
+// "SystemTray.OmniButtonRight". Verified on Windows 11 22H2+ zh-CN and en-US:
+// network is SystemTray.AccentButton, the clock SystemTray.OmniButton, the
+// overflow arrow and notification icons SystemTray.NormalButton, and the show
+// desktop corner SystemTray.ShowDesktopButton.
+bool isVolumeButtonClass(const std::wstring& className)
+{
+    return className == L"SystemTray.OmniButtonRight";
+}
+
+bool isTrayButtonClass(const std::wstring& className)
+{
+    constexpr wchar_t kPrefix[] = L"SystemTray.";
+    return className.rfind(kPrefix, 0) == 0;
+}
+
+std::string hresultText(HRESULT hr)
+{
+    char code[16] = {};
+    std::snprintf(code, sizeof code, "0x%08lX", static_cast<unsigned long>(hr));
+    std::string text(code);
+    wchar_t* buffer = nullptr;
+    const DWORD n = ::FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM
+            | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr, static_cast<DWORD>(hr), 0, reinterpret_cast<wchar_t*>(&buffer), 0, nullptr);
+    if (n && buffer) {
+        std::wstring message(buffer, n);
+        while (!message.empty() && (message.back() == L'\r' || message.back() == L'\n'
+                   || message.back() == L' ' || message.back() == L'.'))
+            message.pop_back();
+        if (!message.empty())
+            text += ": " + winshun::utf8(message);
+    }
+    if (buffer)
+        ::LocalFree(buffer);
+    return text;
+}
+
+// How far the tray volume button's hit area may grow on each side. Measured on
+// Windows 11: the peer reports 24 px while the gaps to the network button and
+// the clock are 4 px and 8 px, so a strict hit test drops clicks that a remote
+// desktop's cursor scaling or a touchpad puts a couple of pixels off. The
+// widening never crosses a neighbour (see expandHitRect).
+int volumeHitSlop(RECT button)
+{
+    const int width = static_cast<int>(button.right - button.left);
+    const int height = static_cast<int>(button.bottom - button.top);
+    return std::max(4, std::min(width, height) / 4);
 }
 
 class UiaSession {
@@ -201,9 +257,21 @@ public:
     {
         if (m_uia)
             return true;
-        return SUCCEEDED(::CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_ALL,
-            __uuidof(IUIAutomation), reinterpret_cast<void**>(&m_uia)))
-            && m_uia != nullptr;
+        const HRESULT hr = ::CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_ALL,
+            __uuidof(IUIAutomation), reinterpret_cast<void**>(&m_uia));
+        if (FAILED(hr) || !m_uia) {
+            m_uia = nullptr;
+            // Without UI Automation the snapshot stays empty and every gesture
+            // silently passes through, so this failure must be visible.
+            if (!m_failureLogged) {
+                m_failureLogged = true;
+                winshun::debug("TaskbarVolume: UI Automation unavailable (hr=" + hresultText(hr)
+                    + "); taskbar gestures are disabled");
+            }
+            return false;
+        }
+        m_failureLogged = false;
+        return true;
     }
 
     // Collects taskbar app buttons (Win11 XAML and classic) plus the volume
@@ -218,7 +286,18 @@ public:
 
         const std::size_t before = out.appButtons.size();
         collectAppButtons(root, out, windows);
-        collectVolumeButton(root, out);
+
+        // The hit rect must stay inside the taskbar, so use its window bounds;
+        // a hidden or off-screen taskbar reports an empty rect and the element
+        // bounds are the only fallback.
+        RECT taskbarBounds {};
+        if (!::GetWindowRect(taskbar, &taskbarBounds)
+            || taskbarBounds.right <= taskbarBounds.left || taskbarBounds.bottom <= taskbarBounds.top) {
+            taskbarBounds = RECT {};
+            if (FAILED(root->get_CurrentBoundingRectangle(&taskbarBounds)))
+                taskbarBounds = RECT {};
+        }
+        collectVolumeButton(root, out, taskbarBounds);
 
         // Classic taskbar: the buttons live under an MSTaskListWClass child
         // and expose no "Appid:" automation id. Only used when the XAML peers
@@ -307,11 +386,13 @@ private:
         found->Release();
     }
 
-    void collectVolumeButton(IUIAutomationElement* scope, TaskbarSnapshot& out)
+    // The tray volume button: identified by its Explorer class name, which is
+    // language independent, and only falling back to the localized name. The
+    // hit rectangle is then widened to cover the dead gap to its neighbours, so
+    // a click a few pixels off — normal on a remote desktop or a high-DPI
+    // pointer — still lands.
+    void collectVolumeButton(IUIAutomationElement* scope, TaskbarSnapshot& out, RECT taskbarBounds)
     {
-        // Tray volume button: a Button whose localized name starts with
-        // "音量"/"Volume"/…. Pick the smallest candidate — the tray icon, not
-        // a window that merely has "Volume" in its title.
         VARIANT buttonType;
         buttonType.vt = VT_I4;
         buttonType.lVal = UIA_ButtonControlTypeId;
@@ -325,36 +406,80 @@ private:
         if (FAILED(hr) || !found)
             return;
 
-        long long bestArea = -1;
-        RECT bestRect {};
+        // Structural match: the class name does not change with the Windows
+        // display language, so it wins over the name heuristic. The automation
+        // id is only a tiebreaker - a hidden placeholder of the same class would
+        // otherwise be picked.
+        int bestStructRank = -1; // 1 = OmniButtonRight + SystemTrayIcon, 0 = class only
+        long long bestStructArea = -1;
+        RECT bestStruct {};
+        // Name fallback, used only when no structural candidate exists: the
+        // smallest volume-named button is the tray icon, not a window whose
+        // title merely contains "Volume".
+        long long bestNamedArea = -1;
+        RECT bestNamed {};
+        std::vector<RECT> trayRects;
+
         int n = 0;
         found->get_Length(&n);
         for (int i = 0; i < n; ++i) {
             IUIAutomationElement* el = nullptr;
-            if (SUCCEEDED(found->GetElement(i, &el)) && el) {
-                BSTR name = nullptr;
-                if (SUCCEEDED(el->get_CurrentName(&name)) && name) {
-                    const std::wstring n(name);
+            if (FAILED(found->GetElement(i, &el)) || !el)
+                continue;
+
+            RECT r {};
+            const bool usable = SUCCEEDED(el->get_CurrentBoundingRectangle(&r))
+                && r.right > r.left && r.bottom > r.top;
+            if (usable) {
+                std::wstring className;
+                std::wstring automationId;
+                if (BSTR value = nullptr; SUCCEEDED(el->get_CurrentClassName(&value)) && value) {
+                    className.assign(value);
+                    ::SysFreeString(value);
+                }
+                if (BSTR value = nullptr; SUCCEEDED(el->get_CurrentAutomationId(&value)) && value) {
+                    automationId.assign(value);
+                    ::SysFreeString(value);
+                }
+
+                if (isVolumeButtonClass(className)) {
+                    const int rank = automationId == L"SystemTrayIcon" ? 1 : 0;
+                    const long long area = 1LL * (r.right - r.left) * (r.bottom - r.top);
+                    if (rank > bestStructRank || (rank == bestStructRank && (bestStructArea < 0 || area < bestStructArea))) {
+                        bestStructRank = rank;
+                        bestStructArea = area;
+                        bestStruct = r;
+                    }
+                } else if (isTrayButtonClass(className)) {
+                    trayRects.push_back(r); // a neighbour that limits the widening
+                }
+            }
+
+            if (usable && bestNamedArea < 0) {
+                if (BSTR name = nullptr; SUCCEEDED(el->get_CurrentName(&name)) && name) {
+                    const std::wstring label(name);
                     ::SysFreeString(name);
-                    if (startsWithVolumeWord(n)) {
-                        RECT r {};
-                        if (SUCCEEDED(el->get_CurrentBoundingRectangle(&r))) {
-                            const long long area = 1LL * (r.right - r.left) * (r.bottom - r.top);
-                            if (bestArea < 0 || area < bestArea) {
-                                bestArea = area;
-                                bestRect = r;
-                            }
+                    if (startsWithVolumeWord(label)) {
+                        const long long area = 1LL * (r.right - r.left) * (r.bottom - r.top);
+                        if (bestNamedArea < 0 || area < bestNamedArea) {
+                            bestNamedArea = area;
+                            bestNamed = r;
                         }
                     }
                 }
-                el->Release();
             }
+            el->Release();
         }
         found->Release();
-        if (bestArea >= 0) {
-            out.hasVolume = true;
-            out.volumeRect = bestRect;
+
+        if (bestStructArea < 0) {
+            if (bestNamedArea < 0)
+                return;
+            bestStruct = bestNamed;
         }
+
+        out.hasVolume = true;
+        out.volumeRect = expandHitRect(bestStruct, taskbarBounds, trayRects, volumeHitSlop(bestStruct));
     }
 
     static TaskbarButton buttonFromElement(IUIAutomationElement* el)
@@ -372,6 +497,7 @@ private:
     }
 
     IUIAutomation* m_uia = nullptr;
+    bool m_failureLogged = false;
 };
 
 TaskbarSnapshot buildSnapshot(UiaSession* uia)
@@ -444,7 +570,7 @@ void TaskbarResolver::scheduleRefresh(ULONGLONG delayMs)
 }
 
 void CALLBACK TaskbarResolver::winEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd,
-    LONG, LONG, DWORD, DWORD)
+    LONG idObject, LONG, DWORD, DWORD)
 {
     TaskbarResolver* self = s_live;
     if (!self || !hwnd)
@@ -483,7 +609,17 @@ void CALLBACK TaskbarResolver::winEventProc(HWINEVENTHOOK, DWORD event, HWND hwn
         self->scheduleRefresh(400);
         return;
     case EVENT_OBJECT_NAMECHANGE:
+        // The taskbar's XAML InputSite child fires NAMECHANGE every second
+        // because the clock's accessible name contains the time. Those arrive
+        // with a custom XAML peer idObject (measured 0x1307C3), never
+        // OBJID_WINDOW or OBJID_CLIENT, and they cannot change any rectangle
+        // the resolver builds (it re-enumerates with FindAll, it does not
+        // trust the event). Dropping them avoids a rebuild per second for no
+        // reason. App titles still fire with OBJID_WINDOW on their own
+        // top-level windows, which the branch below keeps.
         if (!taskbar && ::GetAncestor(hwnd, GA_ROOT) != hwnd)
+            return;
+        if (taskbar && idObject != OBJID_CLIENT && idObject != OBJID_WINDOW)
             return;
         break;
     default:
@@ -502,9 +638,16 @@ void TaskbarResolver::run()
     ::PeekMessageW(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
 
     const HRESULT cohr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(cohr)) {
+        winshun::debug("TaskbarVolume: CoInitializeEx failed (hr=" + hresultText(cohr)
+            + "); taskbar gestures are disabled");
+        // RPC_E_CHANGED_MODE still leaves a usable COM apartment behind, so
+        // keep going: UIA may work even though our own CoUninitialize must not
+        // run.
+    }
 
     UiaSession uia;
-    uia.init();
+    uia.init(); // logs its own failure
 
     auto refresh = [this, &uia] {
         TaskbarSnapshot out = buildSnapshot(&uia);
@@ -523,10 +666,10 @@ void TaskbarResolver::run()
     if (!m_winEvent)
         winshun::debug("TaskbarVolume: SetWinEventHook failed; snapshot falls back to the 1 s timer");
 
-    if (SUCCEEDED(cohr))
-        refresh(); // initial snapshot
+    refresh(); // initial snapshot, whatever the COM state
 
     ULONGLONG lastRefresh = ::GetTickCount64();
+    ULONGLONG lastHeal = lastRefresh;
     while (m_running.load()) {
         // Wait for messages (out-of-context WinEvent callbacks are delivered
         // while the thread pumps) or 100 ms, whichever comes first.
@@ -556,6 +699,20 @@ void TaskbarResolver::run()
             m_dirty = false;
             refresh();
             lastRefresh = now;
+        }
+        // Self-healing: a lost WinEvent hook (Explorer restart, remote-session
+        // reattach) or a UIA that only became available later would otherwise
+        // leave the plugin gesture-less until the host restarts it.
+        if (now - lastHeal >= kHealMs) {
+            lastHeal = now;
+            if (!m_winEvent) {
+                m_winEvent = ::SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_NAMECHANGE, nullptr,
+                    &TaskbarResolver::winEventProc, 0, 0,
+                    WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+                if (m_winEvent)
+                    winshun::debug("TaskbarVolume: SetWinEventHook re-armed");
+            }
+            uia.init(); // logs once if it is still unavailable
         }
     }
 

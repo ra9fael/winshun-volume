@@ -651,4 +651,74 @@ TEST("wheel: a blocked decision keeps the button index for the overlay title")
     CHECK_EQ(d.buttonIndex, std::size_t { 1 });
 }
 
+// ---- hit rect widening ---------------------------------------------------------
+
+TEST("hitrect: slop widens each side when nothing is nearby")
+{
+    const RECT hit = rect(100, 100, 124, 148);
+    const RECT out = expandHitRect(hit, rect(0, 0, 1920, 1080), {}, 4);
+    CHECK_EQ(out.left, 96L);
+    CHECK_EQ(out.top, 96L);
+    CHECK_EQ(out.right, 128L);
+    CHECK_EQ(out.bottom, 152L);
+}
+
+TEST("hitrect: a neighbour closer than the slop stops the widening on that side")
+{
+    // Real layout: network button ends at 1798, volume is 1802..1826, clock
+    // starts at 1834. Four pixels of slop reach the network button exactly.
+    const RECT hit = rect(1802, 1032, 1826, 1080);
+    const std::vector<RECT> neighbours { rect(1774, 1032, 1798, 1080), rect(1834, 1032, 1904, 1080) };
+    const RECT out = expandHitRect(hit, rect(0, 1032, 1920, 1080), neighbours, 8);
+    CHECK_EQ(out.left, 1798L);   // never covers the network button
+    CHECK_EQ(out.right, 1834L);  // never covers the clock
+}
+
+TEST("hitrect: the dead gap next to the volume button becomes clickable")
+{
+    const RECT hit = rect(1802, 1032, 1826, 1080);
+    const std::vector<RECT> neighbours { rect(1774, 1032, 1798, 1080) };
+    const RECT out = expandHitRect(hit, rect(0, 1032, 1920, 1080), neighbours, 4);
+    CHECK_EQ(out.left, 1798L);
+    TaskbarSnapshot s;
+    s.hasVolume = true;
+    s.volumeRect = out;
+    // The 4 px gap left of the button was a dead zone before.
+    CHECK_EQ(s.zoneAt(POINT { 1799, 1056 }), Zone::VolumeButton);
+    CHECK_EQ(s.zoneAt(POINT { 1800, 1056 }), Zone::VolumeButton);
+    // The network button stays untouched.
+    CHECK_EQ(s.zoneAt(POINT { 1797, 1056 }), Zone::None);
+}
+
+TEST("hitrect: widening never leaves the taskbar bounds")
+{
+    const RECT hit = rect(2, 1032, 20, 1080);
+    const RECT out = expandHitRect(hit, rect(0, 1032, 1920, 1080), {}, 8);
+    CHECK_EQ(out.left, 0L);
+    CHECK_EQ(out.top, 1032L);
+}
+
+TEST("hitrect: overlapping placeholders are ignored, not used as limits")
+{
+    // A hidden XAML placeholder reports [1566,1032,1920,1080] and overlaps the
+    // tray; it must not shrink the volume rect to nothing.
+    const RECT hit = rect(1802, 1032, 1826, 1080);
+    const std::vector<RECT> neighbours { rect(1566, 1032, 1920, 1080), rect(0, 0, 0, 0) };
+    const RECT out = expandHitRect(hit, rect(0, 1032, 1920, 1080), neighbours, 4);
+    CHECK_EQ(out.left, 1798L);
+    CHECK(out.right > 1826L);
+}
+
+TEST("hitrect: a zero slop or a degenerate rect is returned unchanged")
+{
+    const RECT hit = rect(1802, 1032, 1826, 1080);
+    RECT out = expandHitRect(hit, rect(0, 0, 1920, 1080), {}, 0);
+    CHECK_EQ(out.left, hit.left);
+    CHECK_EQ(out.right, hit.right);
+    const RECT degenerate = rect(10, 10, 10, 10);
+    out = expandHitRect(degenerate, rect(0, 0, 1920, 1080), {}, 8);
+    CHECK_EQ(out.left, degenerate.left);
+    CHECK_EQ(out.right, degenerate.right);
+}
+
 int registerCount = 0; // keeps translation unit alive; tests self-register

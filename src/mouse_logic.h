@@ -54,9 +54,19 @@ struct TaskbarButton {
     bool ambiguous = false;
 };
 
+// Grows `hit` by at most `slop` pixels on each side, never past `bounds` and
+// never over a neighbour. The tray volume button is only 24 px wide and sits
+// next to a 4 px dead gap, so a strict hit test drops clicks that a remote
+// desktop, a high-DPI pointer or a touchpad lands a few pixels off. Neighbours
+// that already overlap `hit` (hidden placeholders report nonsense rectangles)
+// are ignored instead of producing a negative gap.
+RECT expandHitRect(RECT hit, RECT bounds, const std::vector<RECT>& neighbours, int slop);
+
 // A read-only, cheap-to-copy snapshot of the taskbar the hook can consult.
 struct TaskbarSnapshot {
     std::vector<TaskbarButton> appButtons;
+    // The tray volume button's hit rectangle: the element's own bounds, already
+    // widened by the resolver to cover the gap to its neighbours.
     RECT volumeRect{};
     bool hasVolume = false;
     // A window/taskbar change is waiting for the next rebuild: the app-button

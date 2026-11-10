@@ -3,6 +3,10 @@
 
 #include "winshun.h"
 
+#include <algorithm>
+#include <iterator>
+#include <string>
+
 namespace tv {
 
 namespace {
@@ -52,18 +56,33 @@ void MouseHook::run()
     g_hook = this;
 
     // The installing thread must pump messages for the hook to fire. A failed
-    // installation is retried briefly and then reported instead of leaving the
-    // plugin silently gesture-less.
+    // installation retries with backoff instead of giving up: a remote-session
+    // reattach or a desktop switch can make SetWindowsHookExW fail once and
+    // succeed seconds later, and a permanently gesture-less plugin is worse
+    // than a slow retry.
+    static constexpr int kBackoffMs[] = { 300, 1000, 5000, 30000 };
     HHOOK hook = nullptr;
-    for (int attempt = 0; attempt < 3 && m_running.load() && !hook; ++attempt) {
-        if (attempt > 0)
-            ::Sleep(300);
+    int attempt = 0;
+    while (m_running.load() && !hook) {
+        if (attempt > 0) {
+            const int wait = kBackoffMs[std::min<std::size_t>(
+                static_cast<std::size_t>(attempt) - 1, std::size(kBackoffMs) - 1)];
+            winshun::debug("TaskbarVolume: WH_MOUSE_LL install failed, retrying in "
+                + std::to_string(wait) + " ms");
+            // Sleep in slices so stop() is not delayed by a 30 s backoff.
+            for (int slept = 0; slept < wait && m_running.load(); slept += 100)
+                ::Sleep(100);
+        }
         hook = ::SetWindowsHookExW(WH_MOUSE_LL, &MouseHook::hookProcStatic,
             ::GetModuleHandleW(nullptr), 0);
+        ++attempt;
     }
     if (!hook) {
-        winshun::debug("TaskbarVolume: SetWindowsHookExW(WH_MOUSE_LL) failed");
+        winshun::debug("TaskbarVolume: WH_MOUSE_LL not installed; gestures disabled");
     } else {
+        if (attempt > 1)
+            winshun::debug("TaskbarVolume: WH_MOUSE_LL installed after "
+                + std::to_string(attempt) + " attempts");
         while (m_running.load()) {
             const BOOL got = ::GetMessageW(&msg, nullptr, 0, 0);
             if (got <= 0)

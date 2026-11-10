@@ -1,10 +1,62 @@
 // mouse_logic.cpp — see mouse_logic.h.
 #include "mouse_logic.h"
 
+#include <algorithm>
 #include <cwctype>
 #include <set>
 
 namespace tv {
+
+// ---- hit rects -----------------------------------------------------------------
+
+namespace {
+
+bool overlaps(RECT a, RECT b)
+{
+    return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
+bool spansOverlap(LONG a0, LONG a1, LONG b0, LONG b1)
+{
+    return a0 < b1 && b0 < a1;
+}
+
+} // namespace
+
+RECT expandHitRect(RECT hit, RECT bounds, const std::vector<RECT>& neighbours, int slop)
+{
+    if (slop <= 0 || hit.right <= hit.left || hit.bottom <= hit.top)
+        return hit;
+
+    LONG left = std::max<LONG>(hit.left - slop, bounds.left);
+    LONG right = std::min<LONG>(hit.right + slop, bounds.right);
+    LONG top = std::max<LONG>(hit.top - slop, bounds.top);
+    LONG bottom = std::min<LONG>(hit.bottom + slop, bounds.bottom);
+
+    for (const RECT& n : neighbours) {
+        if (n.right <= n.left || n.bottom <= n.top)
+            continue; // hidden placeholder with a nonsense rectangle
+        if (overlaps(n, hit))
+            continue; // already sits on the button: cannot be a limit
+        const bool beside = spansOverlap(n.top, n.bottom, hit.top, hit.bottom);
+        if (beside && n.right <= hit.left && n.right > left)
+            left = n.right;
+        else if (beside && n.left >= hit.right && n.left < right)
+            right = n.left;
+        else if (spansOverlap(n.left, n.right, hit.left, hit.right)) {
+            if (n.bottom <= hit.top && n.bottom > top)
+                top = n.bottom;
+            else if (n.top >= hit.bottom && n.top < bottom)
+                bottom = n.top;
+        }
+    }
+
+    const RECT out { std::min<LONG>(left, hit.left), std::min<LONG>(top, hit.top),
+        std::max<LONG>(right, hit.right), std::max<LONG>(bottom, hit.bottom) };
+    if (out.right <= out.left || out.bottom <= out.top)
+        return hit;
+    return out;
+}
 
 Zone TaskbarSnapshot::zoneAt(POINT pt, std::size_t* index) const
 {
