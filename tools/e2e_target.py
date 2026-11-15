@@ -49,10 +49,20 @@ def main():
                "the test target produced no audio session")
     except AssertionError:
         # A target that exits says why: "session=0" is a machine without an
-        # audio endpoint (skip), anything else is a broken helper (fail).
-        target.stdin.write("quit\n")
-        target.stdin.flush()
-        target.wait(timeout=5)
+        # audio endpoint (skip), anything else is a broken helper (fail). A
+        # target with no endpoint exits before the quit command, so the write
+        # may hit an already-closed pipe - the diagnosis is on stderr either
+        # way, and must be read after the process is reaped.
+        try:
+            target.stdin.write("quit\n")
+            target.stdin.flush()
+        except OSError:
+            pass
+        try:
+            target.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            target.kill()
+            target.wait(timeout=5)
         reason = target.stderr.read()
         if "session=0" in reason:
             print("SKIP: no audio endpoint on this machine")
