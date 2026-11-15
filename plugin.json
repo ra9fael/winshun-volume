@@ -3,7 +3,6 @@
   "manifest": 1,
   "id": "ra9fael.volume",
   "name": {"zh": "任务栏音量", "en": "Taskbar volume"},
-  "icon": "app.ico",
   "version": "0.1.3",
   "minWinShun": "0.22.0",
   "description": {
