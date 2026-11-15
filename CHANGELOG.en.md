@@ -2,7 +2,7 @@
 
 [中文](CHANGELOG.md)
 
-## [Unreleased]
+## [0.1.4] - 2026-11-16
 
 ### Fixed
 
@@ -41,6 +41,8 @@
 
 - A session listed by `vol` that is not on the default device now names its device
   in the subtitle.
+- The plugin no longer packages a custom app.ico; it uses the same system glyph
+  icon as the other plugins. The volume.exe icon itself is unchanged.
 
 ### Added
 

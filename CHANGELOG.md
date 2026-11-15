@@ -2,7 +2,7 @@
 
 [English](CHANGELOG.en.md)
 
-## [Unreleased]
+## [0.1.4] - 2026-11-16
 
 ### Fixed
 
@@ -29,6 +29,8 @@
 ### Changed
 
 - `vol` 列出的会话如果不在默认设备上，副标题会补上设备名。
+- 不再随插件打包自定义 `app.ico` 图标，改用与其他插件一致的系统字形图标；
+  `volume.exe` 本身的图标不受影响。
 
 ### Added
 
