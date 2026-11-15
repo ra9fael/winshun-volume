@@ -176,17 +176,33 @@ No keys, no network, no telemetry.
 ## Testing
 
 ```powershell
-ctest --test-dir build          # unit tests (pure logic, 55 cases)
+ctest --test-dir build          # 67 unit tests + 2 audio-backed integration tests
 ```
 
-Layered suite: 55 pure-logic unit tests (mouse decisions, hit-rect widening,
-wheel accumulation, volume math, settings, stale-snapshot pass-through) run
-anywhere; protocol round-trips were verified against the real process
-(initialize/query/action/shutdown over JSON-RPC); `tools/VolumeTestTarget`
-provides a controlled window + real audio session for interactive E2E.
-Taskbar-button mapping, Ctrl+wheel/click over app and tray icons, the
-overlay and the event-driven snapshot refresh were checked manually on
-Windows 11. `wsbench` remains optional.
+Layered suite:
+
+- **Unit tests (67, run anywhere)**: mouse decisions, hit-rect widening, wheel
+  accumulation, volume math, settings, session ordering (`session_pick.h`) and
+  the worker's queued operations against a fake backend (stepping, clamping,
+  mute toggling, failure and "no session" wording in both languages).
+- **`tools/e2e_protocol.py`** (needs an audio endpoint): drives the real
+  `volume.exe` the way the host does — initialize / query / action / shutdown
+  over JSON lines. Checks the list's shape, steps one session down and back up
+  by exactly `percentPerStep`, toggles the master mute and restores it, and
+  asserts a clean exit code with no exception in the log.
+- **`tools/e2e_target.py`** (needs an audio endpoint): a closed loop with
+  `tools/VolumeTestTarget`, a controlled process streaming silence. The plugin's
+  write must show up in the target's own `ISimpleAudioVolume` read and the
+  target's session must appear in the plugin's list — the plugin's opinion is
+  checked against the process that owns the stream.
+- **Manual**: taskbar-button mapping, Ctrl+wheel/click over app and tray icons,
+  the overlay and the event-driven snapshot refresh were checked by hand on
+  Windows 11 (injecting real mouse events would fight the user's desktop, so
+  these stay manual). `wsbench` remains optional.
+
+Both integration tests exit with code 77 on a machine without an audio
+endpoint, which ctest reports as *Not Run* instead of failing — a headless CI
+runner stays green without weakening the assertions themselves.
 
 ## License
 

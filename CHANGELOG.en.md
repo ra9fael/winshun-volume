@@ -35,6 +35,25 @@
 - A session listed by `vol` that is not on the default device now names its device
   in the subtitle.
 
+### Added
+
+- Layered automated tests. 67 unit tests, 12 of them new: the worker's queued
+  operations are exercised against a fake backend (stepping, clamping, mute
+  toggling, the failure and "no session" wording in both languages) - this path
+  had no coverage at all before.
+- `tools/e2e_protocol.py`: drives the real `volume.exe` the way the host does
+  (initialize / query / action / shutdown over JSON lines). Checks the list's
+  shape, steps one session down and back up by exactly `percentPerStep`, toggles
+  the master mute and restores it, and asserts a clean exit code with no
+  exception in the log.
+- `tools/e2e_target.py`: a closed loop with `tools/VolumeTestTarget`, a
+  controlled process streaming silence. The plugin's write must be visible in
+  the target's own `ISimpleAudioVolume` read, and the target's session must
+  appear in the plugin's list - the plugin's opinion is checked against the
+  process that owns the stream. Both scripts are wired into ctest (Windows
+  only, and they skip with exit code 77 when the machine has no audio
+  endpoint).
+
 ### Notes
 
 - Restart the plugin process after upgrading.

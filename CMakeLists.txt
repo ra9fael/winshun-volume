@@ -59,13 +59,34 @@ add_executable(tvb_tests
     tests/test_main.cpp
     tests/test_mouse_logic.cpp
     tests/test_sessions.cpp
+    tests/test_volume_ops.cpp
     src/mouse_logic.cpp
+    src/audio_controller.cpp
 )
 target_include_directories(tvb_tests PRIVATE src tests)
 target_compile_definitions(tvb_tests PRIVATE
     UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN CRT_SECURE_NO_WARNINGS)
-target_link_libraries(tvb_tests PRIVATE user32 gdi32)
+target_link_libraries(tvb_tests PRIVATE user32 gdi32 ole32 uuid propsys)
 add_test(NAME tvb_tests COMMAND tvb_tests)
+
+# Protocol and closed-loop tests drive the real volume.exe (and, for the target
+# test, a controlled audio session). They need an audio endpoint: on a machine
+# without one they exit with SKIP_RETURN_CODE, which ctest reports as "Not Run"
+# instead of failing, so a headless CI runner stays green.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME e2e_protocol
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/e2e_protocol.py
+            $<TARGET_FILE:TaskbarVolume>)
+    set_tests_properties(e2e_protocol PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 180 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tools)
+
+    add_test(NAME e2e_target
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/e2e_target.py
+            $<TARGET_FILE:TaskbarVolume> $<TARGET_FILE:VolumeTestTarget>)
+    set_tests_properties(e2e_target PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 180 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tools)
+endif()
 
 # E2E helper: a controlled window + real audio session in one process.
 

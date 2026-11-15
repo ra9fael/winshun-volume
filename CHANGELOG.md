@@ -26,6 +26,20 @@
 
 - `vol` 列出的会话如果不在默认设备上，副标题会补上设备名。
 
+### Added
+
+- 自动化测试分层：67 个纯逻辑单测新增 12 个——用假后端直测 worker 的排队操作
+  （步进、0/100 钳制、静音切换、失败与「没有音频会话」的中英文文案），这部分此前
+  完全没有覆盖。
+- `tools/e2e_protocol.py`：以宿主的方式（initialize/query/action/shutdown，JSON
+  行协议）驱动真实的 `volume.exe`，核对列表结构、单个会话按 `percentPerStep` 步进
+  并还原、主静音切换并还原、退出码与日志无异常。机器没有音频端点时以 77 退出，
+  ctest 记为 Not Run 而不是失败，CI 无声卡也不会红。
+- `tools/e2e_target.py`：与 `tools/VolumeTestTarget` 的闭环——受控进程播放静音，
+  插件的写入必须能在目标进程自己的 `ISimpleAudioVolume` 读到，目标的会话也必须
+  出现在插件的列表里；用目标进程的真实状态校验插件的说法。两个脚本都已接入
+  ctest（Windows 上运行，无音频自动跳过）。
+
 ### Notes
 
 - 更新后需重新启动插件进程。
