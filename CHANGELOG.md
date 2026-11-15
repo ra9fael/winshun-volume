@@ -19,6 +19,10 @@
   会话，其次才是默认设备上的会话。
 - 主音量只尝试 `eConsole` 一个 role，该 role 没有默认设备时直接失败；现在依次尝试
   `eConsole`、`eMultimedia`、`eCommunications`。
+- WebView2 宿主（如新版 Teams）的音频调不了：会话属于 `msedgewebview2.exe`，而按钮
+  解析到宿主进程，过去只认同 pid 或同 exe 路径。现在这两条都不中时沿父链向上走
+  （最多三级）；系统宿主（explorer、svchost、SearchHost、RuntimeBroker、
+  ShellExperienceHost）的后代一律不认——那条链说明不了音频属于谁。
 - 清理 `CHANGELOG.md` / `CHANGELOG.en.md` 里遗留的合并冲突标记（0.1.1 段落此前被夹在
   冲突块中间）。
 
@@ -28,17 +32,22 @@
 
 ### Added
 
-- 自动化测试分层：67 个纯逻辑单测新增 12 个——用假后端直测 worker 的排队操作
-  （步进、0/100 钳制、静音切换、失败与「没有音频会话」的中英文文案），这部分此前
-  完全没有覆盖。
+- 自动化测试分层：73 个纯逻辑单测——用假后端直测 worker 的排队操作（步进、0/100
+  钳制、静音切换、失败与「没有音频会话」的中英文文案，这部分此前完全没有覆盖），
+  以及应用匹配规则（pid、exe 路径、父链 + 深度上限）。
 - `tools/e2e_protocol.py`：以宿主的方式（initialize/query/action/shutdown，JSON
   行协议）驱动真实的 `volume.exe`，核对列表结构、单个会话按 `percentPerStep` 步进
   并还原、主静音切换并还原、退出码与日志无异常。机器没有音频端点时以 77 退出，
   ctest 记为 Not Run 而不是失败，CI 无声卡也不会红。
 - `tools/e2e_target.py`：与 `tools/VolumeTestTarget` 的闭环——受控进程播放静音，
   插件的写入必须能在目标进程自己的 `ISimpleAudioVolume` 读到，目标的会话也必须
-  出现在插件的列表里；用目标进程的真实状态校验插件的说法。两个脚本都已接入
+  出现在插件的列表里；用目标进程的真实状态校验插件的说法。三个脚本都已接入
   ctest（Windows 上运行，无音频自动跳过）。
+- `tools/e2e_device_switch.py`：换设备回归测试——用 Settings 同款的
+  `IPolicyConfig` 接口在插件运行时切换系统默认输出，断言插件记录了重绑、读到了
+  新设备的主音量、恢复后回到原值。需要设 `TVB_E2E_DEVICE_SWITCH=1` 才运行
+  （它切换的是全局默认设备），声明时必须显式 `InterfaceIsIUnknown`——默认的
+  IDispatch 布局会把每个方法排到错误的 vtable 槽位，调用即崩溃。
 
 ### Notes
 

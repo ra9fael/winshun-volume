@@ -3,6 +3,8 @@
 #include "session_pick.h"
 #include "test_harness.h"
 
+#include <map>
+
 using namespace tv;
 
 namespace {
@@ -81,4 +83,60 @@ TEST("session: sorting an empty or single-session list is safe")
     sortSessionsForRead(one);
     CHECK_EQ(one.size(), std::size_t { 1 });
     CHECK_EQ(one[0].percent, 7);
+}
+
+// ---- matching a session to an app -------------------------------------------------
+
+TEST("match: the same process always matches")
+{
+    std::map<DWORD, DWORD> parents;
+    CHECK(sessionMatchesApp(4242, L"", 4242, L"", parents));
+    CHECK(sessionMatchesApp(4242, L"C:\\a\\x.exe", 4242, L"C:\\b\\y.exe", parents));
+}
+
+TEST("match: the same executable covers Chromium's audio subprocess")
+{
+    std::map<DWORD, DWORD> parents;
+    CHECK(sessionMatchesApp(500, L"C:\\Program Files\\Edge\\msedge.exe", 111,
+        L"C:\\Program Files\\Edge\\msedge.exe", parents));
+    CHECK(!sessionMatchesApp(500, L"C:\\Program Files\\Edge\\msedge.exe", 111,
+        L"C:\\Program Files\\Other\\other.exe", parents));
+    // Path comparison is case-insensitive: QueryFullProcessImageNameW case
+    // depends on how the process was started.
+    CHECK(sessionMatchesApp(500, L"C:\\PrograM FileS\\edge\\MsEdge.Exe", 111,
+        L"c:\\program files\\EDGE\\msedge.exe", parents));
+}
+
+TEST("match: a WebView2 helper is its host's descendant")
+{
+    // ms-teams.exe -> msedgewebview2.exe (browser) -> msedgewebview2.exe (audio)
+    std::map<DWORD, DWORD> parents { { 30, 20 }, { 20, 10 } };
+    CHECK(sessionMatchesApp(30, L"C:\\wb\\msedgewebview2.exe", 10,
+        L"C:\\teams\\ms-teams.exe", parents));
+}
+
+TEST("match: the walk is capped, so unrelated descendants stay unrelated")
+{
+    std::map<DWORD, DWORD> parents { { 40, 30 }, { 30, 20 }, { 20, 10 }, { 10, 5 } };
+    // Three steps up from 40 reach 10: inside the cap.
+    CHECK(sessionMatchesApp(40, L"", 10, L"", parents));
+    // Four steps would reach 5: beyond the cap, no match.
+    CHECK(!sessionMatchesApp(40, L"", 5, L"", parents));
+    // A dead-end chain (parent pid no longer in the snapshot) matches nothing.
+    std::map<DWORD, DWORD> orphan { { 40, 9999 } };
+    CHECK(!sessionMatchesApp(40, L"", 10, L"", orphan));
+}
+
+TEST("match: an empty parent map means the first two rules only")
+{
+    const std::map<DWORD, DWORD> none;
+    CHECK(sessionMatchesApp(500, L"C:\\a\\x.exe", 111, L"C:\\a\\x.exe", none));
+    CHECK(!sessionMatchesApp(500, L"C:\\wb\\msedgewebview2.exe", 10, L"C:\\teams\\ms-teams.exe", none));
+}
+
+TEST("match: no relation at all matches nothing")
+{
+    std::map<DWORD, DWORD> parents { { 30, 20 }, { 20, 10 } };
+    CHECK(!sessionMatchesApp(30, L"C:\\x\\a.exe", 77, L"C:\\y\\b.exe", parents));
+    CHECK(!sessionMatchesApp(30, L"", 77, L"", parents));
 }

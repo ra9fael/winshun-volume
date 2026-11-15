@@ -27,6 +27,13 @@
 - Master volume only tried the `eConsole` role and failed outright when that role
   had no default. It now tries `eConsole`, then `eMultimedia`, then
   `eCommunications`.
+- A WebView2 host's audio could not be controlled from its taskbar button: the
+  audio session belongs to `msedgewebview2.exe`, the button resolves to the host
+  (for example `ms-teams.exe`), and matching only accepted the same pid or the
+  same executable path. The session's parent chain is now walked (up to three
+  steps) when neither matches; descendants of system hosts (explorer, svchost,
+  SearchHost, RuntimeBroker, ShellExperienceHost) are excluded, since that chain
+  identifies no app.
 - Removed the leftover merge-conflict markers from `CHANGELOG.md` and
   `CHANGELOG.en.md` (the 0.1.1 section was trapped inside a conflict block).
 
@@ -37,10 +44,11 @@
 
 ### Added
 
-- Layered automated tests. 67 unit tests, 12 of them new: the worker's queued
-  operations are exercised against a fake backend (stepping, clamping, mute
-  toggling, the failure and "no session" wording in both languages) - this path
-  had no coverage at all before.
+- Layered automated tests. 73 unit tests: the worker's queued operations are
+  exercised against a fake backend (stepping, clamping, mute toggling, the
+  failure and "no session" wording in both languages) - this path had no
+  coverage at all before - and so is app matching (pid, executable path,
+  parent chain with its depth cap).
 - `tools/e2e_protocol.py`: drives the real `volume.exe` the way the host does
   (initialize / query / action / shutdown over JSON lines). Checks the list's
   shape, steps one session down and back up by exactly `percentPerStep`, toggles
@@ -50,9 +58,17 @@
   controlled process streaming silence. The plugin's write must be visible in
   the target's own `ISimpleAudioVolume` read, and the target's session must
   appear in the plugin's list - the plugin's opinion is checked against the
-  process that owns the stream. Both scripts are wired into ctest (Windows
-  only, and they skip with exit code 77 when the machine has no audio
-  endpoint).
+  process that owns the stream.
+- `tools/e2e_device_switch.py`: the regression test for the stale binding.
+  Uses the same undocumented `IPolicyConfig` interface as the Settings app to
+  switch the system default output while a real `volume.exe` runs, and asserts
+  that the plugin logs a rebind, reads the new device's master volume and
+  returns to the original value. It only runs with `TVB_E2E_DEVICE_SWITCH=1`
+  (it changes the global default) and must declare the interface as IUnknown
+  based: the default IDispatch layout puts every method on the wrong vtable
+  slot and crashes the caller. All three are wired into ctest (Windows only);
+  the audio-backed ones skip with exit code 77 when the machine has no audio
+  endpoint, and the switch test skips unless the environment variable is set.
 
 ### Notes
 

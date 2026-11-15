@@ -9,10 +9,12 @@
 #include <mmdeviceapi.h>
 #include <propsys.h>
 #include <shellapi.h>
+#include <tlhelp32.h>
 
 #include <cmath>
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 namespace tv {
@@ -84,18 +86,23 @@ std::wstring deviceIdOf(IMMDevice* device)
     return value;
 }
 
-// A session belongs to the requested app when it is the same process or when
-// the session's process runs the same executable. The latter is what makes
-// Chrome/Edge work: their audio session lives in a renderer or utility
-// process, never in the window's browser process.
-bool sameApplication(DWORD sessionPid, const std::wstring& sessionExe, DWORD targetPid,
-    const std::wstring& targetExe)
+// pid -> parent pid, for the parent-chain rule in session_pick.h. Toolhelp
+// reads a system snapshot, so it works on processes this one could not open.
+std::map<DWORD, DWORD> parentMap()
 {
-    if (sessionPid == targetPid)
-        return true;
-    if (targetExe.empty() || sessionExe.empty())
-        return false;
-    return ::CompareStringOrdinal(sessionExe.c_str(), -1, targetExe.c_str(), -1, TRUE) == CSTR_EQUAL;
+    std::map<DWORD, DWORD> out;
+    HANDLE snapshot = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE)
+        return out;
+    PROCESSENTRY32W entry {};
+    entry.dwSize = sizeof entry;
+    if (::Process32FirstW(snapshot, &entry)) {
+        do {
+            out.emplace(entry.th32ProcessID, entry.th32ParentProcessID);
+        } while (::Process32NextW(snapshot, &entry));
+    }
+    ::CloseHandle(snapshot);
+    return out;
 }
 
 } // namespace
@@ -125,22 +132,16 @@ public:
 
     std::optional<int> sessionPercent(DWORD pid) override
     {
-        const std::wstring targetExe = exePathOf(pid);
-        // listSessions() is ordered so the first match is the session the user
+        const std::vector<SessionInfo> mine = appSessions(pid);
+        // appSessions() is ordered so the first one is the session the user
         // hears, not an idle session of the same app on another device.
-        for (const SessionInfo& s : listSessions())
-            if (sameApplication(s.pid, s.exePath, pid, targetExe))
-                return s.percent;
-        return std::nullopt;
+        return mine.empty() ? std::nullopt : std::optional<int>(mine.front().percent);
     }
 
     std::optional<bool> sessionMuted(DWORD pid) override
     {
-        const std::wstring targetExe = exePathOf(pid);
-        for (const SessionInfo& s : listSessions())
-            if (sameApplication(s.pid, s.exePath, pid, targetExe))
-                return s.muted;
-        return std::nullopt;
+        const std::vector<SessionInfo> mine = appSessions(pid);
+        return mine.empty() ? std::nullopt : std::optional<bool>(mine.front().muted);
     }
 
     std::optional<int> masterPercent() override
@@ -200,42 +201,7 @@ public:
         std::map<DWORD, std::wstring> exeCache;
         forEachSession([&](const EndpointInfo& endpoint, IAudioSessionControl2* control, bool active,
                            DWORD pid) {
-            SessionInfo info;
-            info.pid = pid;
-            info.state = active ? SessionState::Active : SessionState::Inactive;
-            info.onDefaultDevice = endpoint.isDefault;
-            info.deviceName = endpoint.name;
-
-            LPWSTR id = nullptr;
-            if (SUCCEEDED(control->GetSessionIdentifier(&id)) && id) {
-                info.id = id;
-                ::CoTaskMemFree(id);
-            }
-
-            LPWSTR display = nullptr;
-            if (SUCCEEDED(control->GetDisplayName(&display)) && display) {
-                info.name = display;
-                ::CoTaskMemFree(display);
-            }
-            auto exeIt = exeCache.find(pid);
-            if (exeIt == exeCache.end())
-                exeIt = exeCache.emplace(pid, exePathOf(pid)).first;
-            info.exePath = exeIt->second;
-            if (info.name.empty())
-                info.name = baseNameOf(info.exePath);
-
-            ISimpleAudioVolume* simple = nullptr;
-            if (SUCCEEDED(control->QueryInterface(__uuidof(ISimpleAudioVolume),
-                    reinterpret_cast<void**>(&simple)))) {
-                float v = 0.f;
-                if (SUCCEEDED(simple->GetMasterVolume(&v)))
-                    info.percent = static_cast<int>(std::lround(v * 100.f));
-                BOOL muted = FALSE;
-                simple->GetMute(&muted);
-                info.muted = muted != 0;
-                simple->Release();
-            }
-            out.push_back(std::move(info));
+            out.push_back(describeSession(endpoint, control, active, pid, exePathOf(pid)));
         });
         sortSessionsForRead(out);
         return out;
@@ -243,34 +209,64 @@ public:
 
     bool setSessionPercent(DWORD pid, int percent) override
     {
+        const std::vector<SessionInfo> mine = appSessions(pid);
+        if (mine.empty())
+            return false;
+        std::set<DWORD> pids;
+        for (const SessionInfo& s : mine)
+            pids.insert(s.pid);
         const float target = clampPercent(percent) / 100.f;
         bool written = false;
         // Every session of the app on every active output device, not just the
         // default one: a per-app output choice or a stream pinned to another
         // device is still the app's volume.
-        forEachAppSession(pid, [&](ISimpleAudioVolume* volume) {
-            if (FAILED(volume->SetMasterVolume(target, nullptr)))
+        forEachSession([&](const EndpointInfo&, IAudioSessionControl2* control, bool,
+                           DWORD sessionPid) {
+            if (pids.count(sessionPid) == 0)
                 return;
-            float readBack = 0.f;
-            if (SUCCEEDED(volume->GetMasterVolume(&readBack))
-                && std::fabs(readBack - target) < 0.005f)
-                written = true;
+            ISimpleAudioVolume* simple = nullptr;
+            if (FAILED(control->QueryInterface(__uuidof(ISimpleAudioVolume),
+                    reinterpret_cast<void**>(&simple)))
+                || !simple)
+                return;
+            if (SUCCEEDED(simple->SetMasterVolume(target, nullptr))) {
+                float readBack = 0.f;
+                if (SUCCEEDED(simple->GetMasterVolume(&readBack))
+                    && std::fabs(readBack - target) < 0.005f)
+                    written = true;
+            }
+            simple->Release();
         });
         return written;
     }
 
     bool setSessionMute(DWORD pid, bool mute, bool& nowMuted) override
     {
+        const std::vector<SessionInfo> mine = appSessions(pid);
+        if (mine.empty())
+            return false;
+        std::set<DWORD> pids;
+        for (const SessionInfo& s : mine)
+            pids.insert(s.pid);
         bool written = false;
-        forEachAppSession(pid, [&](ISimpleAudioVolume* volume) {
-            if (FAILED(volume->SetMute(mute ? TRUE : FALSE, nullptr)))
+        forEachSession([&](const EndpointInfo&, IAudioSessionControl2* control, bool,
+                           DWORD sessionPid) {
+            if (pids.count(sessionPid) == 0)
                 return;
-            BOOL readBack = FALSE;
-            if (SUCCEEDED(volume->GetMute(&readBack))) {
-                nowMuted = readBack != 0;
-                if ((readBack != 0) == mute)
-                    written = true;
+            ISimpleAudioVolume* simple = nullptr;
+            if (FAILED(control->QueryInterface(__uuidof(ISimpleAudioVolume),
+                    reinterpret_cast<void**>(&simple)))
+                || !simple)
+                return;
+            if (SUCCEEDED(simple->SetMute(mute ? TRUE : FALSE, nullptr))) {
+                BOOL readBack = FALSE;
+                if (SUCCEEDED(simple->GetMute(&readBack))) {
+                    nowMuted = readBack != 0;
+                    if ((readBack != 0) == mute)
+                        written = true;
+                }
             }
+            simple->Release();
         });
         return written;
     }
@@ -280,6 +276,46 @@ private:
         std::wstring name;
         bool isDefault = false;
     };
+
+    // Everything the plugin needs to know about one session, for the vol list
+    // and for the matching rules alike.
+    SessionInfo describeSession(const EndpointInfo& endpoint, IAudioSessionControl2* control,
+        bool active, DWORD pid, const std::wstring& exePath)
+    {
+        SessionInfo info;
+        info.pid = pid;
+        info.state = active ? SessionState::Active : SessionState::Inactive;
+        info.onDefaultDevice = endpoint.isDefault;
+        info.deviceName = endpoint.name;
+        info.exePath = exePath;
+
+        LPWSTR id = nullptr;
+        if (SUCCEEDED(control->GetSessionIdentifier(&id)) && id) {
+            info.id = id;
+            ::CoTaskMemFree(id);
+        }
+
+        LPWSTR display = nullptr;
+        if (SUCCEEDED(control->GetDisplayName(&display)) && display) {
+            info.name = display;
+            ::CoTaskMemFree(display);
+        }
+        if (info.name.empty())
+            info.name = baseNameOf(info.exePath);
+
+        ISimpleAudioVolume* simple = nullptr;
+        if (SUCCEEDED(control->QueryInterface(__uuidof(ISimpleAudioVolume),
+                reinterpret_cast<void**>(&simple)))) {
+            float v = 0.f;
+            if (SUCCEEDED(simple->GetMasterVolume(&v)))
+                info.percent = static_cast<int>(std::lround(v * 100.f));
+            BOOL muted = FALSE;
+            simple->GetMute(&muted);
+            info.muted = muted != 0;
+            simple->Release();
+        }
+        return info;
+    }
 
     // The output device the user hears. eConsole is the role the tray flyout
     // and Settings show; the other roles are fallbacks for a role that has no
@@ -445,26 +481,75 @@ private:
         });
     }
 
-    // Every session the app owns on every active output device.
-    template <typename F>
-    void forEachAppSession(DWORD pid, F&& fn)
+    // The app's sessions on every active output device, best first, plus in
+    // `pids` every process that owns one (the write path filters by pid).
+    std::vector<SessionInfo> appSessions(DWORD pid, std::set<DWORD>& pids)
     {
         const std::wstring targetExe = exePathOf(pid);
         std::map<DWORD, std::wstring> exeCache;
-        forEachSession([&](const EndpointInfo&, IAudioSessionControl2* control, bool, DWORD sessionPid) {
-            auto exeIt = exeCache.find(sessionPid);
-            if (exeIt == exeCache.end())
-                exeIt = exeCache.emplace(sessionPid, exePathOf(sessionPid)).first;
-            if (!sameApplication(sessionPid, exeIt->second, pid, targetExe))
-                return;
-            ISimpleAudioVolume* simple = nullptr;
-            if (SUCCEEDED(control->QueryInterface(__uuidof(ISimpleAudioVolume),
-                    reinterpret_cast<void**>(&simple)))
-                && simple) {
-                fn(simple);
-                simple->Release();
+        auto collect = [&](const std::map<DWORD, DWORD>& parents) {
+            std::vector<SessionInfo> out;
+            forEachSession([&](const EndpointInfo& endpoint, IAudioSessionControl2* control,
+                               bool active, DWORD sessionPid) {
+                auto exeIt = exeCache.find(sessionPid);
+                if (exeIt == exeCache.end())
+                    exeIt = exeCache.emplace(sessionPid, exePathOf(sessionPid)).first;
+                if (!sessionMatchesApp(sessionPid, exeIt->second, pid, targetExe, parents))
+                    return;
+                out.push_back(
+                    describeSession(endpoint, control, active, sessionPid, exeIt->second));
+            });
+            return out;
+        };
+
+        // The parent map costs a whole system snapshot, so the common rules get
+        // the first pass and the chain is only walked when they found nothing.
+        std::vector<SessionInfo> out = collect({});
+        if (!out.empty()) {
+            for (const SessionInfo& s : out)
+                pids.insert(s.pid);
+            sortSessionsForRead(out);
+            return out;
+        }
+
+        // A system process (SearchHost, BingWallpaper) is nobody's audio target:
+        // its helpers must not be matched to whatever button resolves to it.
+        static const wchar_t* const kSystemHosts[] = {
+            L"explorer.exe", L"svchost.exe", L"sihost.exe", L"SearchHost.exe",
+            L"ShellExperienceHost.exe", L"RuntimeBroker.exe",
+        };
+        const std::map<DWORD, DWORD> parents = parentMap();
+        std::vector<SessionInfo> descendants = collect(parents);
+        for (auto it = descendants.begin(); it != descendants.end();) {
+            bool ownedBySystemHost = false;
+            DWORD current = it->pid;
+            for (int step = 0; step < 3 && current != 0; ++step) {
+                const auto parent = parents.find(current);
+                if (parent == parents.end())
+                    break;
+                current = parent->second;
+                const auto exe = exeCache.find(current);
+                if (exe != exeCache.end()) {
+                    for (const wchar_t* host : kSystemHosts)
+                        if (ciEqual(baseNameOf(exe->second), host))
+                            ownedBySystemHost = true;
+                }
             }
-        });
+            if (ownedBySystemHost)
+                it = descendants.erase(it);
+            else
+                ++it;
+        }
+        for (const SessionInfo& s : descendants)
+            pids.insert(s.pid);
+        sortSessionsForRead(descendants);
+        return descendants;
+    }
+
+    std::vector<SessionInfo> appSessions(DWORD pid)
+    {
+        std::set<DWORD> pids;
+        return appSessions(pid, pids);
     }
 
     // Rebinds once after device invalidation, then retries `fn` exactly once;

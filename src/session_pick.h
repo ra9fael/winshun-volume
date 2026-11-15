@@ -8,6 +8,8 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cwctype>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -50,6 +52,47 @@ inline bool sessionBefore(const SessionInfo& a, const SessionInfo& b)
 inline void sortSessionsForRead(std::vector<SessionInfo>& sessions)
 {
     std::stable_sort(sessions.begin(), sessions.end(), sessionBefore);
+}
+
+inline bool ciEqual(const std::wstring& a, const std::wstring& b)
+{
+    if (a.size() != b.size())
+        return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (std::towlower(a[i]) != std::towlower(b[i]))
+            return false;
+    return true;
+}
+
+// True when a session belongs to the app behind a taskbar button, in three
+// steps: the same process; a process running the same executable (Chromium
+// plays audio in a renderer/utility process, never in the window's browser
+// process); or - when neither matches - a descendant of the button's process,
+// which is where a WebView2 host's audio lives (the host exe is
+// ms-teams.exe, the audio session belongs to msedgewebview2.exe).
+//
+// `parentOf` maps a pid to its parent; empty means ancestry is unavailable and
+// only the first two rules apply. The walk is capped at three steps: past the
+// browser process the chain says more about who launched whom than about which
+// app the audio belongs to.
+inline bool sessionMatchesApp(DWORD sessionPid, const std::wstring& sessionExe,
+    DWORD targetPid, const std::wstring& targetExe,
+    const std::map<DWORD, DWORD>& parentOf = {})
+{
+    if (sessionPid == targetPid)
+        return true;
+    if (!targetExe.empty() && !sessionExe.empty() && ciEqual(sessionExe, targetExe))
+        return true;
+    DWORD current = sessionPid;
+    for (int step = 0; step < 3 && current != 0; ++step) {
+        const auto it = parentOf.find(current);
+        if (it == parentOf.end())
+            return false;
+        current = it->second;
+        if (current == targetPid)
+            return true;
+    }
+    return false;
 }
 
 } // namespace tv

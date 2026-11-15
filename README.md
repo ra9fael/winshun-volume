@@ -127,7 +127,12 @@ No keys, no network, no telemetry.
   executable name; the window title is only the last-resort fallback.
 - Audio sessions are matched by process id and by executable path: Chromium
   apps (Edge/Chrome) play audio in a renderer/utility process whose pid
-  differs from the window's browser process.
+  differs from the window's browser process. When neither matches, the
+  session's parent chain is walked (up to three steps): a WebView2 host's
+  audio lives in `msedgewebview2.exe`, which is a grandchild of the button's
+  process. Descendants of system hosts (explorer, svchost, SearchHost,
+  RuntimeBroker, ShellExperienceHost) are never matched to a button, since
+  such a chain says nothing about which app owns the audio.
 - Sessions are collected from **every active output device**, not only the
   default one: an app whose output was pointed elsewhere (Settings → Volume
   Mixer, an app's own device choice) is still controllable. The value the
@@ -176,14 +181,15 @@ No keys, no network, no telemetry.
 ## Testing
 
 ```powershell
-ctest --test-dir build          # 67 unit tests + 2 audio-backed integration tests
+ctest --test-dir build          # 73 unit tests + 3 audio-backed integration tests
 ```
 
 Layered suite:
 
-- **Unit tests (67, run anywhere)**: mouse decisions, hit-rect widening, wheel
-  accumulation, volume math, settings, session ordering (`session_pick.h`) and
-  the worker's queued operations against a fake backend (stepping, clamping,
+- **Unit tests (73, run anywhere)**: mouse decisions, hit-rect widening, wheel
+  accumulation, volume math, settings, session ordering (`session_pick.h`),
+  app matching (pid, executable path, parent chain with the depth cap) and the
+  worker's queued operations against a fake backend (stepping, clamping,
   mute toggling, failure and "no session" wording in both languages).
 - **`tools/e2e_protocol.py`** (needs an audio endpoint): drives the real
   `volume.exe` the way the host does — initialize / query / action / shutdown
@@ -195,6 +201,15 @@ Layered suite:
   write must show up in the target's own `ISimpleAudioVolume` read and the
   target's session must appear in the plugin's list — the plugin's opinion is
   checked against the process that owns the stream.
+- **`tools/e2e_device_switch.py`** (needs an audio endpoint **and** your
+  consent — it switches the system default output and restores it): the
+  regression test for the stale-binding bug. Runs only with
+  `TVB_E2E_DEVICE_SWITCH=1` set, then switches the default output while a real
+  `volume.exe` is running and checks that the plugin logs a rebind, reads the
+  new device's master volume, and returns to the original value. Uses the same
+  undocumented `IPolicyConfig` interface as the Settings app, declared with the
+  correct IUnknown layout (an IDispatch-layout declaration puts every method on
+  the wrong vtable slot and crashes the caller).
 - **Manual**: taskbar-button mapping, Ctrl+wheel/click over app and tray icons,
   the overlay and the event-driven snapshot refresh were checked by hand on
   Windows 11 (injecting real mouse events would fight the user's desktop, so
