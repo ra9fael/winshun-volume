@@ -128,14 +128,33 @@ No keys, no network, no telemetry.
 - Audio sessions are matched by process id and by executable path: Chromium
   apps (Edge/Chrome) play audio in a renderer/utility process whose pid
   differs from the window's browser process.
+- Sessions are collected from **every active output device**, not only the
+  default one: an app whose output was pointed elsewhere (Settings → Volume
+  Mixer, an app's own device choice) is still controllable. The value the
+  overlay shows and steps from belongs to the session that is actually playing
+  (an active session wins over an idle one of the same app, then the default
+  device breaks ties), so a leftover silent session can no longer make the
+  numbers move while nothing is heard. The `vol` list names the device when a
+  session is not on the default one.
+- Output device changes are followed. Core Audio does not report an error for
+  a device that merely stopped being the default - it stays alive and keeps
+  accepting `SetMasterVolumeLevelScalar`, and the read-back agrees - so the
+  bound endpoint is compared with the current default before every operation
+  and rebound when they differ. Switching output, plugging in a headset or
+  changing the default in Settings takes effect on the next wheel notch;
+  `plugins.log` gets one `following output device …` line per device. The
+  default is the `eConsole` endpoint, with `eMultimedia` and then
+  `eCommunications` as fallbacks for a role that has no default.
 - Ambiguous button (several distinct processes match it) → the mouse event
   is swallowed and the overlay says the target cannot be determined; the
   plugin never guesses.
 - No audio session for a resolved app → swallowed with a "no audio session"
   overlay; neither half of the click reaches the taskbar as a phantom click.
-  Windows only exposes per-app volume for live sessions, so a silent app
-  shows that message until it plays sound (Chromium apps drop their session
-  when playback stops).
+  Windows only creates a per-app session once the app opens a stream, and drops
+  it again after the last one ends, so an app that has never played sound since
+  it started shows that message until it does. An app that has played keeps an
+  idle session, which is still controllable: setting its volume before playback
+  works.
 - While a taskbar change is queued for the next snapshot rebuild (at most
   ~0.6 s, usually less), app-button gestures pass through instead of acting
   on the previous layout; the tray volume button keeps working. The taskbar's
@@ -157,10 +176,10 @@ No keys, no network, no telemetry.
 ## Testing
 
 ```powershell
-ctest --test-dir build          # unit tests (pure logic, 49 cases)
+ctest --test-dir build          # unit tests (pure logic, 55 cases)
 ```
 
-Layered suite: 49 pure-logic unit tests (mouse decisions, hit-rect widening,
+Layered suite: 55 pure-logic unit tests (mouse decisions, hit-rect widening,
 wheel accumulation, volume math, settings, stale-snapshot pass-through) run
 anywhere; protocol round-trips were verified against the real process
 (initialize/query/action/shutdown over JSON-RPC); `tools/VolumeTestTarget`

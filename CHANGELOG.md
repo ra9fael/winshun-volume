@@ -1,13 +1,34 @@
 # Changelog
 
-<<<<<<< HEAD
-## [0.1.1]
-
-- Preserve the current plugin behavior and add a reproducible tag/manual build, test and package workflow.
-=======
 [English](CHANGELOG.en.md)
 
 ## [Unreleased]
+
+### Fixed
+
+- 换过输出设备之后，任务栏手势会一直调「上一个设备」：一个只是不再是默认输出的设备
+  并不会失效，它仍然接受 `SetMasterVolumeLevelScalar`，读回来也一致，于是浮层照常
+  显示新数值，声音和静音却毫无变化，要重启插件进程才恢复。现在每次操作前都把绑定的
+  端点和当前默认输出比较，不同就重新绑定；`plugins.log` 里每个设备只记一行
+  `following output device …`，一眼能看出插件在跟哪个设备。
+- 会话只在默认设备上枚举：应用在「设置 → 系统 → 声音 → 音量混合器」里被指到别的输出
+  设备时，插件要么报「没有音频会话」，要么把数值写进默认设备上同名的僵尸会话（数字
+  在变、声音不动）。现在枚举所有活动输出设备上的会话。
+- 同一个应用有多个会话时只读列表里的第一个，而那个会话可能早已不发声（同一进程可以
+  同时留下 100% 和 92% 两个非活动会话），滚轮会从旧值起跳。现在优先「正在发声」的
+  会话，其次才是默认设备上的会话。
+- 主音量只尝试 `eConsole` 一个 role，该 role 没有默认设备时直接失败；现在依次尝试
+  `eConsole`、`eMultimedia`、`eCommunications`。
+- 清理 `CHANGELOG.md` / `CHANGELOG.en.md` 里遗留的合并冲突标记（0.1.1 段落此前被夹在
+  冲突块中间）。
+
+### Changed
+
+- `vol` 列出的会话如果不在默认设备上，副标题会补上设备名。
+
+### Notes
+
+- 更新后需重新启动插件进程。
 
 ## [0.1.3] - 2026-11-10
 
@@ -50,4 +71,7 @@
 ### Notes
 
 - 本次仅生成本地标签与安装包。实际验证范围见 docs/icon-validation.md；未进行 GitHub 发布。更新后需重新启动插件进程。
->>>>>>> 08067e4 (fix(volume): package and assign plugin icons)
+
+## [0.1.1]
+
+- Preserve the current plugin behavior and add a reproducible tag/manual build, test and package workflow.

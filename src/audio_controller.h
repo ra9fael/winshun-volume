@@ -4,6 +4,8 @@
 // header) stays inside audio_controller.cpp behind a factory.
 #pragma once
 
+#include "session_pick.h"
+
 #include <windows.h>
 
 #include <memory>
@@ -12,15 +14,6 @@
 #include <vector>
 
 namespace tv {
-
-struct SessionInfo {
-    std::wstring id;   // session instance identifier (stable across restarts)
-    std::wstring name; // display name, or the exe base name as a fallback
-    std::wstring exePath; // full path of the session's process (may be empty)
-    DWORD pid = 0;
-    int percent = 0;
-    bool muted = false;
-};
 
 class IAudioBackend {
 public:
@@ -40,8 +33,9 @@ public:
     virtual std::optional<bool> masterMuted() = 0;
     virtual bool setMasterMute(bool mute, bool& nowMuted) = 0;
 
-    // Sessions of the current default output device. System sounds and the
-    // plugin's own session are excluded.
+    // Sessions of every active output device, ordered best first (see
+    // session_pick.h): the session being heard comes first. System sounds and
+    // the plugin's own session are excluded.
     virtual std::vector<SessionInfo> listSessions() = 0;
 };
 

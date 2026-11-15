@@ -111,7 +111,10 @@ protected:
 
         // Sessions, optionally filtered. One row per process: the plugin
         // writes every session of a pid, so repeated rows for the same pid
-        // would only show values that are about to be overwritten.
+        // would only show values that are about to be overwritten. The list is
+        // ordered by what is actually being heard, so the row shows that
+        // session's value; the device is only named when it is not the default
+        // one, which is when the extra context explains a surprise.
         const std::string filter = winshun::trim(q.text);
         const std::wstring wfilter = toLower(winshun::wide(filter));
         std::set<DWORD> seenPids;
@@ -123,8 +126,10 @@ protected:
             std::string id = s.id.empty()
                 ? "session:" + std::to_string(s.pid) + ":" + winshun::utf8(s.name)
                 : "session:" + winshun::utf8(s.id);
-            const std::string subtitle = "PID " + std::to_string(s.pid)
+            std::string subtitle = "PID " + std::to_string(s.pid)
                 + " · " + winshun::utf8(percentText(s.percent, s.muted, zh));
+            if (!s.onDefaultDevice && !s.deviceName.empty())
+                subtitle += " · " + winshun::utf8(s.deviceName);
             Item it(std::move(id), winshun::utf8(s.name), subtitle);
             it.withData(Json::Object { { "target", "session" }, { "pid", s.pid } });
             items.push_back(std::move(it));

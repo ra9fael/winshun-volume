@@ -58,6 +58,7 @@ enable_testing()
 add_executable(tvb_tests
     tests/test_main.cpp
     tests/test_mouse_logic.cpp
+    tests/test_sessions.cpp
     src/mouse_logic.cpp
 )
 target_include_directories(tvb_tests PRIVATE src tests)

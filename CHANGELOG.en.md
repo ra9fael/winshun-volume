@@ -1,13 +1,43 @@
 # Changelog
 
-<<<<<<< HEAD
-## [0.1.1]
-
-- Preserve the current plugin behavior and add a reproducible tag/manual build, test and package workflow.
-=======
 [中文](CHANGELOG.md)
 
 ## [Unreleased]
+
+### Fixed
+
+- Taskbar gestures kept adjusting the **previous** output device after the default
+  one changed. A device that merely stopped being the default does not fail: it
+  stays alive and keeps accepting `SetMasterVolumeLevelScalar`, and the read-back
+  agrees, so the overlay showed the new value while the volume and mute did
+  nothing until the plugin process was restarted. The bound endpoint is now
+  compared with the current default before every operation and rebound when they
+  differ; `plugins.log` gets one `following output device …` line per device, so
+  the log shows which device the plugin follows.
+- Sessions were only enumerated on the default device. When an app's output was
+  pointed elsewhere (Settings → System → Sound → Volume Mixer), the plugin either
+  reported "no audio session" or wrote the value into a same-named stale session
+  on the default device (numbers moving, sound unchanged). Every active output
+  device is enumerated now.
+- With several sessions of the same app, only the first one was read - which can
+  be one that stopped playing long ago (one process can leave an idle session at
+  100 % and another at 92 %), so the wheel started from a stale value. The
+  session that is actually playing is read first; the default device only breaks
+  ties.
+- Master volume only tried the `eConsole` role and failed outright when that role
+  had no default. It now tries `eConsole`, then `eMultimedia`, then
+  `eCommunications`.
+- Removed the leftover merge-conflict markers from `CHANGELOG.md` and
+  `CHANGELOG.en.md` (the 0.1.1 section was trapped inside a conflict block).
+
+### Changed
+
+- A session listed by `vol` that is not on the default device now names its device
+  in the subtitle.
+
+### Notes
+
+- Restart the plugin process after upgrading.
 
 ## [0.1.3] - 2026-11-10
 
@@ -61,4 +91,7 @@
 ### Notes
 
 - Local tag and package only. See docs/icon-validation.en.md for the measured coverage; no GitHub release. Restart the plugin process after upgrading.
->>>>>>> 08067e4 (fix(volume): package and assign plugin icons)
+
+## [0.1.1]
+
+- Preserve the current plugin behavior and add a reproducible tag/manual build, test and package workflow.
