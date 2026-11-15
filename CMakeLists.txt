@@ -86,6 +86,14 @@ if(Python3_Interpreter_FOUND)
             $<TARGET_FILE:TaskbarVolume> $<TARGET_FILE:VolumeTestTarget>)
     set_tests_properties(e2e_target PROPERTIES
         SKIP_RETURN_CODE 77 TIMEOUT 180 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tools)
+
+    # Switches the system default output device and restores it, so it only
+    # runs when asked for: set TVB_E2E_DEVICE_SWITCH=1 in the environment.
+    add_test(NAME e2e_device_switch
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/e2e_device_switch.py
+            $<TARGET_FILE:TaskbarVolume>)
+    set_tests_properties(e2e_device_switch PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 300 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tools)
 endif()
 
 # E2E helper: a controlled window + real audio session in one process.
