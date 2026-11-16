@@ -2,6 +2,42 @@
 
 [中文](CHANGELOG.md)
 
+## [0.1.5] - 2026-11-16
+
+### Fixed
+
+- Gestures often died mid-scroll (the overlay vanished, the volume stopped
+  moving, then worked again): any window renaming itself marked the snapshot
+  stale and dropped app-button gestures. Some apps rename windows every few
+  hundred milliseconds (a VPN client's status line, browser tab titles,
+  notification toasts), so the snapshot was stale a large share of the time.
+  A rename never moves or removes a taskbar button; it now schedules a silent
+  rebuild without invalidating gestures, while events that can actually
+  change the layout (a window appearing or closing, the taskbar's own
+  geometry) keep the old behaviour. Toolwindows — tooltips, toasts, hover
+  previews — cannot own a taskbar button and no longer trigger a rebuild at
+  all.
+- The master volume panel was titled "System volume"; it now names the output
+  device the value applies to (`Headphones (SHEYIN X5)`), matching the tray's
+  own tooltip. "System volume" remains the fallback when the device cannot be
+  named, and the mute messages use the name too.
+- A bottom-anchored panel was covered by the taskbar's hover tooltip (the
+  `Device: 65%` bubble the tray pops up while you scroll). Bottom placements
+  — and a follow-mouse panel that lands there — now sit one taskbar height
+  above the work area's bottom edge, clear of the tooltip / hover-preview
+  band the taskbar draws above itself; monitors without a bottom taskbar are
+  unaffected.
+- The overlay's hide timer could fire for a deadline that had already been
+  replaced (a queued `WM_TIMER` survives a `SetTimer` reset), hiding a panel a
+  fresh wheel step had just updated. The hide now checks the recorded
+  deadline and re-arms for the remaining time.
+
+### Added
+
+- The overlay's placement math is a pure function with unit tests (anchors,
+  offsets, edge clamping, hover-band clearance — previously untested); the
+  suite grows to 80 tests.
+
 ## [0.1.4] - 2026-11-16
 
 ### Fixed

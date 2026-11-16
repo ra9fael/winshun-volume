@@ -25,12 +25,16 @@ changes until an action runs). Enter toggles mute, Ctrl+Enter volume up,
 Shift+Enter volume down.
 
 A small non-activating overlay shows the new value while you adjust: wheel
-changes show the app name and a large percentage with a bar (`Chrome 35%`),
-mute and blocked results show a one-line message. Its position is the
+changes show the app name and a large percentage with a bar (`Chrome 35%`);
+for the master volume the panel names the **output device** the value applies
+to (`Headphones (SHEYIN X5)`), the same thing the tray's own tooltip says.
+Mute and blocked results show a one-line message. Its position is the
 `overlayAnchor` setting (center by default) on the monitor under the pointer,
-nudged by `overlayOffsetX/Y`; the optional `mouse` anchor follows the pointer
-but can be covered by the taskbar's hover preview. It disappears
-automatically.
+nudged by `overlayOffsetX/Y`; the optional `mouse` anchor follows the pointer.
+Bottom-anchored placements (and a follow-mouse panel that lands there) are
+kept one taskbar height above the work area's bottom edge, clear of the
+tooltips and hover previews the taskbar draws above itself. The panel
+disappears automatically.
 
 ### How the tray volume icon is found
 
@@ -160,11 +164,18 @@ No keys, no network, no telemetry.
   it started shows that message until it does. An app that has played keeps an
   idle session, which is still controllable: setting its volume before playback
   works.
-- While a taskbar change is queued for the next snapshot rebuild (at most
-  ~0.6 s, usually less), app-button gestures pass through instead of acting
-  on the previous layout; the tray volume button keeps working. The taskbar's
-  per-second clock name change no longer triggers a rebuild, so this window is
-  now rare (measured 2–8 % of samples instead of ~40 %).
+- While a taskbar layout change is queued for the next snapshot rebuild (at
+  most ~0.6 s, usually less), app-button gestures pass through instead of
+  acting on the previous layout; the tray volume button keeps working. Only
+  events that can actually move or remove buttons mark the snapshot stale —
+  a new window, a closed one, or the taskbar's own geometry — so this window
+  is rare. Window *title* changes (a VPN client's status line, browser tab
+  titles, notification toasts) used to count too and kept the snapshot stale
+  for a large share of the time on machines whose apps rename windows every
+  few hundred milliseconds, which dropped gestures that had nothing to do
+  with the rename; they now only schedule a silent rebuild. Toolwindows
+  (tooltips, toasts, hover previews) never trigger a rebuild at all — they
+  cannot own a taskbar button.
 - Device invalidation → the backend rebinds once and retries; a failed
   rebind is reported instead of retried against a released device.
 - Setting values out of range → fall back to defaults.
