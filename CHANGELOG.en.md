@@ -2,6 +2,15 @@
 
 [中文](CHANGELOG.md)
 
+## [0.1.7] - 2026-11-16
+
+### Changed
+
+- The overlay's gap to the work area's edges shrinks from 24 px to 6 px: a
+  bottom-right panel now sits 6 px from the screen's right edge and 6 px above
+  the taskbar (0.1.6 sat flush on it). The topmost behaviour is unchanged, so
+  the tray's tooltip still stays underneath.
+
 ## [0.1.6] - 2026-11-16
 
 ### Fixed

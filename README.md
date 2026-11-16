@@ -31,10 +31,10 @@ to (`Headphones (SHEYIN X5)`), the same thing the tray's own tooltip says.
 Mute and blocked results show a one-line message. Its position is the
 `overlayAnchor` setting (center by default) on the monitor under the pointer,
 nudged by `overlayOffsetX/Y`; the optional `mouse` anchor follows the pointer.
-A bottom-anchored panel (and a follow-mouse panel that lands there) is pulled
-flush onto the work area's bottom edge and kept topmost, so it covers the
-tooltips and hover previews the taskbar draws above itself. The panel
-disappears automatically.
+The panel keeps a 6 px gap to the work area's edges; above a bottom taskbar it
+stops 6 px above the taskbar and stays topmost, so the tooltip and hover
+preview the taskbar draws there stay underneath it. The panel disappears
+automatically.
 
 ### How the tray volume icon is found
 
