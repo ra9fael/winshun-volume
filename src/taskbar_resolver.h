@@ -44,7 +44,9 @@ private:
     void run();
     // Coalesces bursts of window/taskbar events into one near-future refresh.
     // `delayMs` lets a new app window settle before the buttons are read.
-    void scheduleRefresh(ULONGLONG delayMs);
+    // `invalidate` marks the current snapshot unusable for gestures (button
+    // rectangles moved); without it the rebuild is silent.
+    void scheduleRefresh(ULONGLONG delayMs, bool invalidate = true);
     static void CALLBACK winEventProc(HWINEVENTHOOK hook, DWORD event, HWND hwnd,
         LONG idObject, LONG idChild, DWORD eventThread, DWORD eventTime);
     static TaskbarResolver* s_live;
@@ -55,6 +57,7 @@ private:
     HWINEVENTHOOK m_winEvent = nullptr;
     bool m_dirty = false; // resolver thread only
     std::atomic<bool> m_pending { false }; // a rebuild is scheduled; read by the hook
+    std::atomic<bool> m_stale { false }; // current rects unusable for gestures
     ULONGLONG m_firstEventTick = 0; // when the pending refresh was first asked for
     ULONGLONG m_lastEventTick = 0; // when the last event asked for a refresh
     ULONGLONG m_refreshDelay = 180;

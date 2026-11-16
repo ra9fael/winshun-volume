@@ -554,11 +554,11 @@ TaskbarSnapshot TaskbarResolver::snapshot() const
     }
     // Read after the copy: an event that lands in between marks the copied
     // rectangles stale, and the hook then passes instead of acting on them.
-    out.appButtonsStale = m_pending.load(std::memory_order_relaxed);
+    out.appButtonsStale = m_stale.load(std::memory_order_relaxed);
     return out;
 }
 
-void TaskbarResolver::scheduleRefresh(ULONGLONG delayMs)
+void TaskbarResolver::scheduleRefresh(ULONGLONG delayMs, bool invalidate)
 {
     const ULONGLONG now = ::GetTickCount64();
     if (!m_dirty)
@@ -566,6 +566,8 @@ void TaskbarResolver::scheduleRefresh(ULONGLONG delayMs)
     m_dirty = true;
     m_lastEventTick = now;
     m_refreshDelay = delayMs;
+    if (invalidate)
+        m_stale.store(true, std::memory_order_relaxed);
     m_pending.store(true, std::memory_order_relaxed);
 }
 
@@ -581,13 +583,15 @@ void CALLBACK TaskbarResolver::winEventProc(HWINEVENTHOOK, DWORD event, HWND hwn
     case EVENT_OBJECT_LOCATIONCHANGE:
     case EVENT_OBJECT_REORDER:
         // Only the taskbar's own geometry matters here; app windows moving
-        // around on screen do not change the button rectangles.
+        // around on screen do not change the button rectangles. A moved or
+        // resized taskbar shifts every button, so gestures must wait.
         if (!taskbar)
             return;
         break;
     case EVENT_OBJECT_DESTROY:
     case EVENT_OBJECT_HIDE:
-        // An app window going away removes its taskbar button.
+        // An app window going away removes its taskbar button and reflows the
+        // row: the rectangles the snapshot holds move underneath the cursor.
         if (::GetAncestor(hwnd, GA_ROOT) != hwnd)
             return;
         break;
@@ -596,19 +600,21 @@ void CALLBACK TaskbarResolver::winEventProc(HWINEVENTHOOK, DWORD event, HWND hwn
         // before its title is readable, so the creation is the reliable one.
         // The same rules that collectWindows() applies decide whether the
         // window can own a taskbar button at all: tooltips, toasts and other
-        // toolwindows never appear on the taskbar and must not cost a stale
-        // snapshot. Explorer needs a moment to add the button, hence the
-        // longer delay.
+        // toolwindows never appear on the taskbar. Adding a button reflows
+        // the row, but only for buttons after the insertion point, and the
+        // rebuild lands within the debounce — not worth dropping gestures
+        // for, so this is a silent rebuild. Some apps show titled helper
+        // windows (desktop lyrics, OSD popups) continuously while playing.
         if (!windowVisibleUncloaked(hwnd) || ::GetWindowTextLengthW(hwnd) == 0)
             return;
-        self->scheduleRefresh(400);
+        self->scheduleRefresh(400, false);
         return;
     case EVENT_OBJECT_SHOW:
         // Menus and tooltips are top-level too; only windows that can own a
-        // taskbar button are apps.
+        // taskbar button count. Same trade-off as CREATE: silent rebuild.
         if (!windowVisibleUncloaked(hwnd) || ::GetWindowTextLengthW(hwnd) == 0)
             return;
-        self->scheduleRefresh(400);
+        self->scheduleRefresh(400, false);
         return;
     case EVENT_OBJECT_NAMECHANGE:
         // Renames never move or remove a taskbar button: the buttons keep
@@ -649,11 +655,14 @@ void TaskbarResolver::run()
 
     auto refresh = [this, &uia] {
         TaskbarSnapshot out = buildSnapshot(&uia);
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_snapshot = std::move(out);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_snapshot = std::move(out);
+        }
         // The snapshot now reflects every change seen before this pass; any
         // event arriving later will set m_pending again.
         m_pending.store(false, std::memory_order_relaxed);
+        m_stale.store(false, std::memory_order_relaxed);
     };
 
     // Out-of-context events are delivered to this thread, so the callback and
