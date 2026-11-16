@@ -34,17 +34,17 @@ struct OverlayPlacement {
 // the monitor the pointer is on and `monitor` that monitor's full bounds.
 //
 // A bottom taskbar draws hover tooltips and the tray's own volume bubble just
-// above itself. Rather than dodging that strip the panel covers it: a panel
-// that would land there is moved down to sit flush on the work area's bottom
-// edge (measured from the monitor bounds, so a top- or side-mounted taskbar
-// leaves the placement alone), and present() keeps re-asserting topmost so the
-// shell's tooltip stays underneath.
+// above itself. The panel covers that strip instead of dodging it: a panel that
+// would run into it stops one small gap above the work area's bottom edge
+// (measured from the monitor bounds, so a top- or side-mounted taskbar leaves
+// the placement alone), and present() keeps re-asserting topmost so the shell's
+// tooltip stays underneath.
 inline RECT overlayRect(OverlayAnchor anchor, int offsetX, int offsetY, int width, int height,
     POINT cursor, RECT work, RECT monitor)
 {
     const int midX = work.left + (work.right - work.left) / 2;
     const int midY = work.top + (work.bottom - work.top) / 2;
-    const int margin = 24;
+    const int margin = 6; // gap to the work area's edges
     int x = midX - width / 2;
     int y = midY - height / 2;
 
@@ -96,15 +96,15 @@ inline RECT overlayRect(OverlayAnchor anchor, int offsetX, int offsetY, int widt
     y += offsetY;
 
     const int hoverBand = monitor.bottom > work.bottom ? monitor.bottom - work.bottom : 0;
-    if (hoverBand > 0 && y + height > work.bottom - hoverBand)
-        y = work.bottom - height;
-
+    // A bottom taskbar keeps the panel out of the strip its tooltips use; the
+    // gap is the same as the one used at the other edges.
+    const int maxBottom = hoverBand > 0 ? work.bottom - margin : work.bottom;
     if (x + width > work.right)
         x = work.right - width;
     if (x < work.left)
         x = work.left;
-    if (y + height > work.bottom)
-        y = work.bottom - height;
+    if (y + height > maxBottom)
+        y = maxBottom - height;
     if (y < work.top)
         y = work.top;
     return RECT { x, y, x + width, y + height };
