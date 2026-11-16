@@ -594,34 +594,32 @@ void CALLBACK TaskbarResolver::winEventProc(HWINEVENTHOOK, DWORD event, HWND hwn
     case EVENT_OBJECT_CREATE:
         // A new top-level window (a launched app). The SHOW event can arrive
         // before its title is readable, so the creation is the reliable one.
-        // Explorer needs a moment to add the button, hence the longer delay.
-        // Hidden/untitled helper windows are not taskbar apps and would only
-        // flood the debounce.
-        if (::GetAncestor(hwnd, GA_ROOT) != hwnd || !::IsWindowVisible(hwnd)
-            || ::GetWindowTextLengthW(hwnd) == 0)
+        // The same rules that collectWindows() applies decide whether the
+        // window can own a taskbar button at all: tooltips, toasts and other
+        // toolwindows never appear on the taskbar and must not cost a stale
+        // snapshot. Explorer needs a moment to add the button, hence the
+        // longer delay.
+        if (!windowVisibleUncloaked(hwnd) || ::GetWindowTextLengthW(hwnd) == 0)
             return;
         self->scheduleRefresh(400);
         return;
     case EVENT_OBJECT_SHOW:
-        // Menus and tooltips are top-level too; only titled windows are apps.
-        if (::GetAncestor(hwnd, GA_ROOT) != hwnd || ::GetWindowTextLengthW(hwnd) == 0)
+        // Menus and tooltips are top-level too; only windows that can own a
+        // taskbar button are apps.
+        if (!windowVisibleUncloaked(hwnd) || ::GetWindowTextLengthW(hwnd) == 0)
             return;
         self->scheduleRefresh(400);
         return;
     case EVENT_OBJECT_NAMECHANGE:
-        // The taskbar's XAML InputSite child fires NAMECHANGE every second
-        // because the clock's accessible name contains the time. Those arrive
-        // with a custom XAML peer idObject (measured 0x1307C3), never
-        // OBJID_WINDOW or OBJID_CLIENT, and they cannot change any rectangle
-        // the resolver builds (it re-enumerates with FindAll, it does not
-        // trust the event). Dropping them avoids a rebuild per second for no
-        // reason. App titles still fire with OBJID_WINDOW on their own
-        // top-level windows, which the branch below keeps.
-        if (!taskbar && ::GetAncestor(hwnd, GA_ROOT) != hwnd)
-            return;
-        if (taskbar && idObject != OBJID_CLIENT && idObject != OBJID_WINDOW)
-            return;
-        break;
+        // Renames never move or remove a taskbar button: the buttons keep
+        // their rectangles, and the pid mapping only shifts when a window
+        // appears or disappears (CREATE / DESTROY / HIDE cover those). The
+        // constant title churn of some apps (a VPN client's status line,
+        // browser tab titles, notification toasts) arrives every few hundred
+        // milliseconds and would keep the snapshot marked stale almost all
+        // the time, dropping gestures that have nothing to do with the
+        // rename. The one-second fallback timer refreshes the mapping.
+        return;
     default:
         return;
     }
