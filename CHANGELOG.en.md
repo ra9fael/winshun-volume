@@ -2,6 +2,21 @@
 
 [中文](CHANGELOG.md)
 
+## [0.1.8] - 2026-11-16
+
+### Changed
+
+- A bottom-right panel sits flush on the work area's bottom and right edges
+  (0 px), and the value and message presentations share one 340 px width.
+  The shell's own tray volume card reaches about 312 px at its widest, so it
+  is covered completely with no white strip on the left; the panel also stops
+  changing width between a wheel step and a mute toggle.
+- Mute, missing audio sessions and similar state results are drawn on two
+  lines: the device or app name in grey above a bold state line. Errors
+  without a target stay a single centred line.
+- The panel re-asserts topmost every 30 ms while visible, so the shell's
+  bubble cannot draw over it.
+
 ## [0.1.7] - 2026-11-16
 
 ### Changed
