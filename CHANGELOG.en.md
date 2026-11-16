@@ -2,6 +2,30 @@
 
 [中文](CHANGELOG.md)
 
+## [0.1.6] - 2026-11-16
+
+### Fixed
+
+- Adjusting a single app's volume still dropped a step now and then: session
+  volume is applied by the audio engine asynchronously, so a read right after
+  a write can still return the previous value. The old read-back verification
+  turned such good writes into dropped steps, and read-modify-write computed
+  the next step from the stale value. A write now counts as done when
+  `SetMasterVolume` returns S_OK, and the intended target is remembered so a
+  continuous gesture advances from it (expires after 1.2 s; external changes
+  are still picked up). The master volume is unaffected — endpoint volume
+  applies synchronously. New closed-loop regression: a rapid burst of 6 down
+  and 6 up steps must restore the target process's own volume exactly.
+- The overlay no longer dodges the taskbar's hover band — it covers it: a
+  bottom-anchored panel (and a follow-mouse panel that lands there) sits flush
+  on the work area's bottom edge and keeps re-asserting topmost while visible,
+  so the tray's own `Device: 65%` bubble stays underneath.
+- Only events that really move taskbar button rectangles invalidate gestures
+  (a window being destroyed or hidden reflows the row, as does the taskbar's
+  own geometry); a window *appearing* — apps that show titled helper windows
+  continuously, like desktop lyrics or OSD popups — now schedules a silent
+  rebuild instead of interrupting a gesture.
+
 ## [0.1.5] - 2026-11-16
 
 ### Fixed
