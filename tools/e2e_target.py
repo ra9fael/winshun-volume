@@ -96,6 +96,24 @@ def main():
         notify_text(plugin.action("volumeUp", item))
         expect(ask("get")["volume"] == state["volume"], "volume was not restored")
 
+        # A continuous gesture is a burst of read-modify-write steps back to
+        # back. The engine applies session volume asynchronously, so each step
+        # must follow the intended target, not the lagging read-back, or steps
+        # get lost and the value stutters.
+        burst = 6
+        for _ in range(burst):
+            notify_text(plugin.action("volumeDown", item))
+            time.sleep(0.08)
+        mid = ask("get")
+        expect(mid["volume"] == state["volume"] - burst * STEP,
+               f"after a burst of {burst} down steps the target reports "
+               f"{mid['volume']}%, expected {state['volume'] - burst * STEP}")
+        for _ in range(burst):
+            notify_text(plugin.action("volumeUp", item))
+            time.sleep(0.08)
+        expect(ask("get")["volume"] == state["volume"],
+               "the burst was not undone exactly")
+
         notify_text(plugin.action("toggleMute", item))
         expect(ask("get")["muted"] is True, "target did not see itself muted")
 

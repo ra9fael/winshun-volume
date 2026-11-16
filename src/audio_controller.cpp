@@ -132,6 +132,14 @@ public:
 
     std::optional<int> sessionPercent(DWORD pid) override
     {
+        // A write just landed for this pid: the engine applies session volume
+        // asynchronously, so a fresh read can still return the previous value
+        // and a read-modify-write step would be lost. Follow the intended
+        // target while it is young instead.
+        const auto it = m_pendingPercent.find(pid);
+        if (it != m_pendingPercent.end()
+            && ::GetTickCount64() - it->second.tick <= kPendingWindowMs)
+            return it->second.percent;
         const std::vector<SessionInfo> mine = appSessions(pid);
         // appSessions() is ordered so the first one is the session the user
         // hears, not an idle session of the same app on another device.
@@ -236,13 +244,22 @@ public:
                 || !simple)
                 return;
             if (SUCCEEDED(simple->SetMasterVolume(target, nullptr))) {
-                float readBack = 0.f;
-                if (SUCCEEDED(simple->GetMasterVolume(&readBack))
-                    && std::fabs(readBack - target) < 0.005f)
-                    written = true;
+                // No read-back gate here: the engine applies session volume
+                // asynchronously, so an immediate GetMasterVolume can still
+                // return the old value and would turn a good write into a
+                // dropped step mid-scroll. S_OK means the write was accepted;
+                // the intent cache in sessionPercent() keeps the next step on
+                // track until the engine catches up.
+                written = true;
             }
             simple->Release();
         });
+        if (written) {
+            // Remember the intended value so the next step of a continuous
+            // gesture is computed from it, not from the engine's lagging
+            // read-back.
+            m_pendingPercent[pid] = { clampPercent(percent), ::GetTickCount64() };
+        }
         return written;
     }
 
@@ -580,6 +597,15 @@ private:
     std::wstring m_deviceId;
     std::wstring m_deviceName;  // friendly name of the bound endpoint
     std::wstring m_loggedDeviceId; // last device id written to the log
+    struct PendingTarget {
+        int percent = 0;
+        ULONGLONG tick = 0;
+    };
+    // pid -> the last value we wrote, valid for kPendingWindowMs. Session
+    // volume is applied by the engine asynchronously; steps computed from a
+    // fresh read would otherwise be lost in a continuous gesture.
+    static constexpr ULONGLONG kPendingWindowMs = 1200;
+    std::map<DWORD, PendingTarget> m_pendingPercent;
     bool m_coInit = false;
 };
 
