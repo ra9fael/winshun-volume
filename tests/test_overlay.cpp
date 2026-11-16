@@ -34,30 +34,32 @@ TEST("overlay: anchors place the panel inside the work area")
 {
     CHECK(eq(place(OverlayAnchor::Center),
         RECT { 1170, 658, 1390, 734 }));
+    // Bottom placements are pulled flush onto the work area's bottom edge so
+    // the panel covers the strip the taskbar draws its hover tooltips in.
     CHECK(eq(place(OverlayAnchor::BottomRight),
-        RECT { 2316, 1268, 2536, 1344 })); // lifted above the hover band
+        RECT { 2316, 1316, 2536, 1392 }));
     CHECK(eq(place(OverlayAnchor::BottomLeft),
-        RECT { 24, 1268, 244, 1344 }));
+        RECT { 24, 1316, 244, 1392 }));
     CHECK(eq(place(OverlayAnchor::TopRight),
         RECT { 2316, 24, 2536, 100 }));
 }
 
-TEST("overlay: bottom placements clear the taskbar's hover band")
+TEST("overlay: bottom placements cover the taskbar's hover band")
 {
     // The tray tooltip and button previews are drawn just above the taskbar;
-    // their band is one taskbar height. The panel's bottom edge must sit above
-    // it, so bottom-right lands 48 px higher than the plain margin.
+    // a panel landing in that strip is moved down onto the edge and kept
+    // topmost by the overlay, so it covers them instead of dodging them.
     const RECT r = place(OverlayAnchor::BottomRight);
-    CHECK_EQ(r.bottom, 1344); // kWork.bottom - 48
+    CHECK_EQ(r.bottom, 1392); // flush with the work area's bottom edge
     CHECK_EQ(r.right, 2536);  // horizontal placement unchanged
 
-    // The follow-mouse anchor clamps against the same band: a cursor sitting
-    // on the taskbar itself would otherwise leave the panel flush with it.
+    // The follow-mouse anchor gets the same treatment: a cursor sitting on
+    // the taskbar itself would otherwise leave the panel floating above it.
     const RECT m = place(OverlayAnchor::Mouse, 0, 0, { 2454, 1416 });
-    CHECK_EQ(m.bottom, 1344);
+    CHECK_EQ(m.bottom, 1392);
 
-    // Bottom-center is lifted as well; top placements are not touched.
-    CHECK_EQ(place(OverlayAnchor::BottomCenter).bottom, 1344);
+    // Bottom-center too; top placements are not touched.
+    CHECK_EQ(place(OverlayAnchor::BottomCenter).bottom, 1392);
     CHECK_EQ(place(OverlayAnchor::TopRight).bottom, 100);
 }
 
@@ -68,14 +70,14 @@ TEST("overlay: a monitor without a bottom taskbar keeps the plain margin")
     CHECK_EQ(r.bottom, 1440 - 24);
 }
 
-TEST("overlay: offsets move the panel but cannot put it back into the band")
+TEST("overlay: offsets move the panel but cannot drop it into the band")
 {
     const RECT pushed = place(OverlayAnchor::BottomRight, 0, 60);
-    CHECK_EQ(pushed.bottom, 1344); // the downward offset is clamped away
+    CHECK_EQ(pushed.bottom, 1392); // pulled back down onto the edge
 
     const RECT nudged = place(OverlayAnchor::BottomRight, -40, 0);
     CHECK_EQ(nudged.right, 2496);
-    CHECK_EQ(nudged.bottom, 1344);
+    CHECK_EQ(nudged.bottom, 1392);
 }
 
 TEST("overlay: panel clamps at the screen edges")
@@ -94,13 +96,13 @@ TEST("overlay: panel clamps at the screen edges")
 TEST("overlay: a small monitor still fits the panel above the band")
 {
     // A band that would push the panel past the top edge wins only until the
-    // panel no longer fits: clamp to the work area's top.
+    // panel no longer fits: clamp to the work area's bottom.
     const RECT work { 0, 0, 800, 120 };
     const RECT monitor { 0, 0, 800, 160 };
     const RECT r = overlayRect(OverlayAnchor::BottomRight, 0, 0, kW, kH, { 400, 100 },
         work, monitor);
-    // The band is 40 px and the panel 76 px: 120 - 40 - 76 = 4, so it starts
-    // four pixels below the top and covers the rest of the work area.
-    CHECK_EQ(r.top, 4);
-    CHECK_EQ(r.bottom, 80);
+    // The band is 40 px, so the panel is pulled flush onto the work area's
+    // bottom edge.
+    CHECK_EQ(r.top, 44);
+    CHECK_EQ(r.bottom, 120);
 }

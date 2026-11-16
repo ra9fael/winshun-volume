@@ -13,6 +13,7 @@ constexpr int kHeight = 76;
 constexpr int kTextWidth = 300;  // message mode: long reasons fit on one line
 constexpr int kTextHeight = 72;
 constexpr UINT_PTR kHideTimer = 1;
+constexpr UINT_PTR kRaiseTimer = 2;
 
 HFONT makeFont(int height, int weight)
 {
@@ -102,6 +103,7 @@ void Overlay::present(const OverlayPlacement& placement, int ms)
         SWP_NOACTIVATE | SWP_SHOWWINDOW);
     ::SetTimer(m_hwnd, kHideTimer, static_cast<UINT>(ms), nullptr);
     m_hideAt = ::GetTickCount64() + static_cast<ULONGLONG>(ms);
+    ::SetTimer(m_hwnd, kRaiseTimer, 100, nullptr);
     ::InvalidateRect(m_hwnd, nullptr, TRUE);
 }
 
@@ -218,11 +220,20 @@ LRESULT Overlay::proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             const ULONGLONG now = ::GetTickCount64();
             if (now >= m_hideAt) {
                 ::KillTimer(hwnd, kHideTimer);
+                ::KillTimer(hwnd, kRaiseTimer);
                 ::ShowWindow(hwnd, SW_HIDE);
             } else {
                 ::SetTimer(hwnd, kHideTimer,
                     static_cast<UINT>(m_hideAt - now), nullptr);
             }
+        } else if (wp == kRaiseTimer) {
+            // Shell tooltips (the tray volume bubble in particular) are
+            // topmost too and jump above this panel when they appear. While
+            // the panel is visible, keep claiming the top of the topmost
+            // band so it covers them.
+            if (::IsWindowVisible(hwnd))
+                ::SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
         return 0;
     default:

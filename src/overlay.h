@@ -33,12 +33,12 @@ struct OverlayPlacement {
 // Computes the panel rectangle for one presentation. `work` is the work area of
 // the monitor the pointer is on and `monitor` that monitor's full bounds.
 //
-// A bottom taskbar draws hover tooltips and thumbnail previews just above
-// itself, and the tray volume tooltip also pops up there whenever the master
-// volume changes under the pointer. A panel that lands in that strip is
-// covered, so the panel's bottom edge is kept one taskbar height above the
-// work area's bottom edge — measured from the monitor bounds, so a top- or
-// side-mounted taskbar leaves the placement alone.
+// A bottom taskbar draws hover tooltips and the tray's own volume bubble just
+// above itself. Rather than dodging that strip the panel covers it: a panel
+// that would land there is moved down to sit flush on the work area's bottom
+// edge (measured from the monitor bounds, so a top- or side-mounted taskbar
+// leaves the placement alone), and present() keeps re-asserting topmost so the
+// shell's tooltip stays underneath.
 inline RECT overlayRect(OverlayAnchor anchor, int offsetX, int offsetY, int width, int height,
     POINT cursor, RECT work, RECT monitor)
 {
@@ -96,11 +96,8 @@ inline RECT overlayRect(OverlayAnchor anchor, int offsetX, int offsetY, int widt
     y += offsetY;
 
     const int hoverBand = monitor.bottom > work.bottom ? monitor.bottom - work.bottom : 0;
-    if (hoverBand > 0 && y + height > work.bottom - hoverBand) {
-        y = work.bottom - hoverBand - height;
-        if (y < work.top)
-            y = work.top;
-    }
+    if (hoverBand > 0 && y + height > work.bottom - hoverBand)
+        y = work.bottom - height;
 
     if (x + width > work.right)
         x = work.right - width;
