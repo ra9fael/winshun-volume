@@ -31,55 +31,54 @@ struct OverlayPlacement {
 };
 
 // Computes the panel rectangle for one presentation. `work` is the work area of
-// the monitor the pointer is on and `monitor` that monitor's full bounds.
+// the monitor the pointer is on.
 //
 // A bottom taskbar draws hover tooltips and the tray's own volume bubble just
-// above itself. The panel covers that strip instead of dodging it: a panel that
-// would run into it stops one small gap above the work area's bottom edge
-// (measured from the monitor bounds, so a top- or side-mounted taskbar leaves
-// the placement alone), and present() keeps re-asserting topmost so the shell's
-// tooltip stays underneath.
+// above itself. The panel covers that strip instead of dodging it: placements
+// sit flush on the work area's edges, so a bottom-right panel reaches the
+// screen's right edge and the taskbar's top edge, and present() keeps
+// re-asserting topmost so the shell's bubble stays underneath. An offset moves
+// the panel anywhere else when the default placement is not wanted.
 inline RECT overlayRect(OverlayAnchor anchor, int offsetX, int offsetY, int width, int height,
-    POINT cursor, RECT work, RECT monitor)
+    POINT cursor, RECT work)
 {
     const int midX = work.left + (work.right - work.left) / 2;
     const int midY = work.top + (work.bottom - work.top) / 2;
-    const int margin = 6; // gap to the work area's edges
     int x = midX - width / 2;
     int y = midY - height / 2;
 
     switch (anchor) {
     case OverlayAnchor::TopLeft:
-        x = work.left + margin;
-        y = work.top + margin;
+        x = work.left;
+        y = work.top;
         break;
     case OverlayAnchor::TopCenter:
         x = midX - width / 2;
-        y = work.top + margin;
+        y = work.top;
         break;
     case OverlayAnchor::TopRight:
-        x = work.right - width - margin;
-        y = work.top + margin;
+        x = work.right - width;
+        y = work.top;
         break;
     case OverlayAnchor::MiddleLeft:
-        x = work.left + margin;
+        x = work.left;
         y = midY - height / 2;
         break;
     case OverlayAnchor::MiddleRight:
-        x = work.right - width - margin;
+        x = work.right - width;
         y = midY - height / 2;
         break;
     case OverlayAnchor::BottomLeft:
-        x = work.left + margin;
-        y = work.bottom - height - margin;
+        x = work.left;
+        y = work.bottom - height;
         break;
     case OverlayAnchor::BottomCenter:
         x = midX - width / 2;
-        y = work.bottom - height - margin;
+        y = work.bottom - height;
         break;
     case OverlayAnchor::BottomRight:
-        x = work.right - width - margin;
-        y = work.bottom - height - margin;
+        x = work.right - width;
+        y = work.bottom - height;
         break;
     case OverlayAnchor::Mouse:
         x = cursor.x - width / 2;
@@ -95,16 +94,12 @@ inline RECT overlayRect(OverlayAnchor anchor, int offsetX, int offsetY, int widt
     x += offsetX;
     y += offsetY;
 
-    const int hoverBand = monitor.bottom > work.bottom ? monitor.bottom - work.bottom : 0;
-    // A bottom taskbar keeps the panel out of the strip its tooltips use; the
-    // gap is the same as the one used at the other edges.
-    const int maxBottom = hoverBand > 0 ? work.bottom - margin : work.bottom;
     if (x + width > work.right)
         x = work.right - width;
     if (x < work.left)
         x = work.left;
-    if (y + height > maxBottom)
-        y = maxBottom - height;
+    if (y + height > work.bottom)
+        y = work.bottom - height;
     if (y < work.top)
         y = work.top;
     return RECT { x, y, x + width, y + height };
@@ -122,8 +117,10 @@ public:
     void destroy();
     bool valid() const { return m_hwnd != nullptr; }
 
-    // Shows a one-line message for `ms` milliseconds, then hides itself.
-    void show(const std::wstring& text, const OverlayPlacement& placement, int ms);
+    // Shows a status for `ms` milliseconds, then hides itself: the label above
+    // the state, or a single centred line when there is no label.
+    void show(const std::wstring& label, const std::wstring& text,
+        const OverlayPlacement& placement, int ms);
 
     // Shows a large percentage with the app label and a progress bar, for
     // fine adjustment while scrolling.

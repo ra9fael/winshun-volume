@@ -207,9 +207,9 @@ TEST("op: a failed app write is reported without a value")
     CHECK(!zh.ok);
     CHECK(!zh.hasValue);
     CHECK(contains(zh.message, L"调整失败"));
-    CHECK(contains(zh.message, L"Chrome"));
+    CHECK_EQ(zh.label, std::wstring(L"Chrome"));
     const VolumeFeedback en = executeVolumeOp(b, appWheel(1), false);
-    CHECK(contains(en.message, L"Failed: Chrome"));
+    CHECK(contains(en.message, L"Adjust failed"));
 }
 
 TEST("op: a silent app explains instead of pretending to write")
@@ -219,7 +219,7 @@ TEST("op: a silent app explains instead of pretending to write")
     CHECK(zh.ok); // nothing to do, but the overlay must say why
     CHECK(!zh.hasValue);
     CHECK(contains(zh.message, L"没有音频会话"));
-    CHECK(contains(zh.message, L"Chrome"));
+    CHECK_EQ(zh.label, std::wstring(L"Chrome"));
     const VolumeFeedback en = executeVolumeOp(b, appWheel(1), false);
     CHECK(contains(en.message, L"no audio session"));
 }
@@ -269,7 +269,7 @@ TEST("op: the master panel names the output device")
     CHECK_EQ(en.label, std::wstring(L"Headphones (SHEYIN X5)"));
     b.masterMutedValue = true;
     const VolumeFeedback unmute = executeVolumeOp(b, masterClick(), true);
-    CHECK(contains(unmute.message, L"Headphones (SHEYIN X5)"));
+    CHECK_EQ(unmute.label, std::wstring(L"Headphones (SHEYIN X5)"));
     CHECK(contains(unmute.message, L"取消静音"));
 }
 

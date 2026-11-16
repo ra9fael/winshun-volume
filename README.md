@@ -28,12 +28,15 @@ A small non-activating overlay shows the new value while you adjust: wheel
 changes show the app name and a large percentage with a bar (`Chrome 35%`);
 for the master volume the panel names the **output device** the value applies
 to (`Headphones (SHEYIN X5)`), the same thing the tray's own tooltip says.
-Mute and blocked results show a one-line message. Its position is the
+Mute and blocked results put the app or device name on a grey first line and
+the state on a bold second line; errors without a target stay a single centred
+line. Its position is the
 `overlayAnchor` setting (center by default) on the monitor under the pointer,
 nudged by `overlayOffsetX/Y`; the optional `mouse` anchor follows the pointer.
-The panel keeps a 6 px gap to the work area's edges; above a bottom taskbar it
-stops 6 px above the taskbar and stays topmost, so the tooltip and hover
-preview the taskbar draws there stay underneath it. The panel disappears
+A bottom-right panel sits flush on the work area's bottom and right edges, so
+it fully covers the tooltip and hover preview the taskbar draws there; the
+panel stays topmost while visible, and `overlayOffsetX/Y` can move it anywhere
+else if the default placement is not wanted. The panel disappears
 automatically.
 
 ### How the tray volume icon is found

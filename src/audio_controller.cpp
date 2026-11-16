@@ -618,16 +618,6 @@ std::unique_ptr<IAudioBackend> createBackend()
 
 namespace {
 
-// "Chrome · no audio session" (or zh) without a dangling separator when the
-// button title is empty.
-std::wstring titled(const std::wstring& title, const wchar_t* zh, const wchar_t* en, bool chinese)
-{
-    const std::wstring suffix = chinese ? zh : en;
-    if (title.empty())
-        return suffix;
-    return title + L" · " + suffix;
-}
-
 // A taskbar button name is "Microsoft Edge - 2 running windows pinned"; the
 // overlay only needs "Microsoft Edge".
 std::wstring shortLabel(std::wstring name)
@@ -668,14 +658,15 @@ VolumeFeedback executeVolumeOp(IAudioBackend& backend, const VolumeOp& op, bool 
             // app has none until it plays something. Say so plainly instead of
             // pretending a read failed.
             fb.ok = true;
-            fb.message = titled(shortLabel(op.buttonTitle), L"没有音频会话", L"no audio session", chinese);
+            fb.label = shortLabel(op.buttonTitle);
+            fb.message = chinese ? L"没有音频会话" : L"no audio session";
             return fb;
         }
         const int next = steppedPercent(*current, op.steps, op.percentPerStep);
         fb.ok = backend.setSessionPercent(op.pid, next);
         if (!fb.ok) {
-            fb.message = chinese ? L"调整失败：" + shortLabel(op.buttonTitle)
-                                 : L"Failed: " + shortLabel(op.buttonTitle);
+            fb.label = shortLabel(op.buttonTitle);
+            fb.message = chinese ? L"调整失败" : L"Adjust failed";
             return fb;
         }
         fb.hasValue = true;
@@ -689,19 +680,20 @@ VolumeFeedback executeVolumeOp(IAudioBackend& backend, const VolumeOp& op, bool 
         const std::optional<bool> wasMuted = backend.sessionMuted(op.pid);
         if (!wasMuted) {
             fb.ok = true; // no live session: nothing to toggle
-            fb.message = titled(shortLabel(op.buttonTitle), L"没有音频会话", L"no audio session", chinese);
+            fb.label = shortLabel(op.buttonTitle);
+            fb.message = chinese ? L"没有音频会话" : L"no audio session";
             return fb;
         }
         bool nowMuted = false;
         fb.ok = backend.setSessionMute(op.pid, !*wasMuted, nowMuted);
         if (!fb.ok) {
-            fb.message = chinese ? L"切换静音失败：" + shortLabel(op.buttonTitle)
-                                 : L"Failed to toggle mute: " + shortLabel(op.buttonTitle);
+            fb.label = shortLabel(op.buttonTitle);
+            fb.message = chinese ? L"切换静音失败" : L"Failed to toggle mute";
             return fb;
         }
-        fb.message = shortLabel(op.buttonTitle)
-            + (chinese ? (nowMuted ? L" · 已静音" : L" · 取消静音")
-                       : (nowMuted ? L" · muted" : L" · unmuted"));
+        fb.label = shortLabel(op.buttonTitle);
+        fb.message = chinese ? (nowMuted ? L"已静音" : L"取消静音")
+                             : (nowMuted ? L"muted" : L"unmuted");
         return fb;
     }
     case VolumeOp::Kind::MasterWheel: {
@@ -734,10 +726,9 @@ VolumeFeedback executeVolumeOp(IAudioBackend& backend, const VolumeOp& op, bool 
             return fb;
         }
         const std::wstring label = masterLabel(backend, chinese);
-        if (chinese)
-            fb.message = nowMuted ? label + L" · 已静音" : label + L" · 取消静音";
-        else
-            fb.message = nowMuted ? label + L" · muted" : label + L" · unmuted";
+        fb.label = label;
+        fb.message = chinese ? (nowMuted ? L"已静音" : L"取消静音")
+                             : (nowMuted ? L"muted" : L"unmuted");
         return fb;
     }
     case VolumeOp::Kind::BlockedReason:
@@ -745,8 +736,10 @@ VolumeFeedback executeVolumeOp(IAudioBackend& backend, const VolumeOp& op, bool 
         if (op.reason == "ambiguous-title")
             fb.message = chinese ? L"无法确定目标应用：标题不唯一"
                                  : L"Cannot determine the app: duplicate titles";
-        else if (op.reason == "no-session")
-            fb.message = titled(shortLabel(op.buttonTitle), L"没有音频会话", L"no audio session", chinese);
+        else if (op.reason == "no-session") {
+            fb.label = shortLabel(op.buttonTitle);
+            fb.message = chinese ? L"没有音频会话" : L"no audio session";
+        }
         else
             fb.message = chinese ? L"该位置无法操作" : L"Nothing to control here";
         return fb;

@@ -116,8 +116,8 @@ void AudioWorker::run()
             };
             if (fb.hasValue)
                 overlay.showValue(fb.label, fb.percent, placement, settings.overlayMs);
-            else if (!fb.message.empty())
-                overlay.show(fb.message, placement, settings.overlayMs);
+            else if (!fb.message.empty() || !fb.label.empty())
+                overlay.show(fb.label, fb.message, placement, settings.overlayMs);
         }
         if (!fb.ok && !fb.message.empty())
             winshun::debug("TaskbarVolume: op failed: " + winshun::utf8(fb.message));
