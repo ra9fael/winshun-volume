@@ -27,6 +27,9 @@ public:
     bool masterMutedValue = false;
     bool failWrites = false;
     bool failReads = false;
+    std::wstring deviceName; // what defaultDeviceName() reports
+
+    std::wstring defaultDeviceName() override { return deviceName; }
 
     std::optional<int> sessionPercent(DWORD pid) override
     {
@@ -252,8 +255,22 @@ TEST("op: master wheel steps the system volume")
     CHECK(fb.ok);
     CHECK(fb.hasValue);
     CHECK_EQ(fb.percent, 42);
-    CHECK_EQ(fb.label, std::wstring(L"系统音量"));
+    CHECK_EQ(fb.label, std::wstring(L"系统音量")); // unnamed device falls back
     CHECK_EQ(b.master, 42);
+}
+
+TEST("op: the master panel names the output device")
+{
+    FakeBackend b;
+    b.deviceName = L"Headphones (SHEYIN X5)";
+    const VolumeFeedback zh = executeVolumeOp(b, masterWheel(1), true);
+    CHECK_EQ(zh.label, std::wstring(L"Headphones (SHEYIN X5)"));
+    const VolumeFeedback en = executeVolumeOp(b, masterWheel(-1), false);
+    CHECK_EQ(en.label, std::wstring(L"Headphones (SHEYIN X5)"));
+    b.masterMutedValue = true;
+    const VolumeFeedback unmute = executeVolumeOp(b, masterClick(), true);
+    CHECK(contains(unmute.message, L"Headphones (SHEYIN X5)"));
+    CHECK(contains(unmute.message, L"取消静音"));
 }
 
 TEST("op: master click toggles the system mute")

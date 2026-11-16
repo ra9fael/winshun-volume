@@ -33,6 +33,10 @@ public:
     virtual std::optional<bool> masterMuted() = 0;
     virtual bool setMasterMute(bool mute, bool& nowMuted) = 0;
 
+    // Friendly name of the output device the master volume applies to (the
+    // default render endpoint); empty when it cannot be named.
+    virtual std::wstring defaultDeviceName() = 0;
+
     // Sessions of every active output device, ordered best first (see
     // session_pick.h): the session being heard comes first. System sounds and
     // the plugin's own session are excluded.

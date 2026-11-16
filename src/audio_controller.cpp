@@ -164,6 +164,12 @@ public:
         return muted != 0;
     }
 
+    std::wstring defaultDeviceName() override
+    {
+        ensureBound();
+        return m_deviceName;
+    }
+
     bool setMasterPercent(int percent) override
     {
         if (!ensureBound() || !m_endpoint)
@@ -400,8 +406,9 @@ private:
         // in plugins.log, without logging on every wheel notch.
         if (m_deviceId != m_loggedDeviceId) {
             m_loggedDeviceId = m_deviceId;
+            m_deviceName = friendlyNameOf(device);
             winshun::debug("TaskbarVolume: following output device "
-                + winshun::utf8(friendlyNameOf(device)));
+                + winshun::utf8(m_deviceName));
         }
         return true;
     }
@@ -411,6 +418,7 @@ private:
         safeRelease(m_endpoint);
         safeRelease(m_device);
         m_deviceId.clear();
+        m_deviceName.clear();
     }
 
     // Calls `fn(device, endpoint)` for every active render endpoint.
@@ -570,6 +578,7 @@ private:
     IMMDevice* m_device = nullptr;
     IAudioEndpointVolume* m_endpoint = nullptr;
     std::wstring m_deviceId;
+    std::wstring m_deviceName;  // friendly name of the bound endpoint
     std::wstring m_loggedDeviceId; // last device id written to the log
     bool m_coInit = false;
 };
@@ -606,6 +615,17 @@ std::wstring shortLabel(std::wstring name)
         && ::CompareStringOrdinal(name.c_str() + name.size() - kPinnedLen,
                static_cast<int>(kPinnedLen), kPinned, static_cast<int>(kPinnedLen), TRUE) == CSTR_EQUAL)
         name.resize(name.size() - kPinnedLen);
+    return name;
+}
+
+// The overlay names what is being adjusted. For the master volume that is the
+// output device itself — the same thing the tray's own tooltip shows — with
+// "System volume" as the fallback for a device that cannot be named.
+std::wstring masterLabel(IAudioBackend& backend, bool chinese)
+{
+    std::wstring name = backend.defaultDeviceName();
+    if (name.empty())
+        name = chinese ? L"系统音量" : L"System volume";
     return name;
 }
 
@@ -672,7 +692,7 @@ VolumeFeedback executeVolumeOp(IAudioBackend& backend, const VolumeOp& op, bool 
         }
         fb.hasValue = true;
         fb.percent = next;
-        fb.label = chinese ? L"系统音量" : L"System volume";
+        fb.label = masterLabel(backend, chinese);
         return fb;
     }
     case VolumeOp::Kind::MasterClickToggle: {
@@ -687,7 +707,7 @@ VolumeFeedback executeVolumeOp(IAudioBackend& backend, const VolumeOp& op, bool 
             fb.message = chinese ? L"切换系统静音失败" : L"Failed to toggle the system mute";
             return fb;
         }
-        const std::wstring label = chinese ? L"系统音量" : L"System volume";
+        const std::wstring label = masterLabel(backend, chinese);
         if (chinese)
             fb.message = nowMuted ? label + L" · 已静音" : label + L" · 取消静音";
         else
