@@ -30,6 +30,89 @@ struct OverlayPlacement {
     int offsetY = 0;
 };
 
+// Computes the panel rectangle for one presentation. `work` is the work area of
+// the monitor the pointer is on and `monitor` that monitor's full bounds.
+//
+// A bottom taskbar draws hover tooltips and thumbnail previews just above
+// itself, and the tray volume tooltip also pops up there whenever the master
+// volume changes under the pointer. A panel that lands in that strip is
+// covered, so the panel's bottom edge is kept one taskbar height above the
+// work area's bottom edge — measured from the monitor bounds, so a top- or
+// side-mounted taskbar leaves the placement alone.
+inline RECT overlayRect(OverlayAnchor anchor, int offsetX, int offsetY, int width, int height,
+    POINT cursor, RECT work, RECT monitor)
+{
+    const int midX = work.left + (work.right - work.left) / 2;
+    const int midY = work.top + (work.bottom - work.top) / 2;
+    const int margin = 24;
+    int x = midX - width / 2;
+    int y = midY - height / 2;
+
+    switch (anchor) {
+    case OverlayAnchor::TopLeft:
+        x = work.left + margin;
+        y = work.top + margin;
+        break;
+    case OverlayAnchor::TopCenter:
+        x = midX - width / 2;
+        y = work.top + margin;
+        break;
+    case OverlayAnchor::TopRight:
+        x = work.right - width - margin;
+        y = work.top + margin;
+        break;
+    case OverlayAnchor::MiddleLeft:
+        x = work.left + margin;
+        y = midY - height / 2;
+        break;
+    case OverlayAnchor::MiddleRight:
+        x = work.right - width - margin;
+        y = midY - height / 2;
+        break;
+    case OverlayAnchor::BottomLeft:
+        x = work.left + margin;
+        y = work.bottom - height - margin;
+        break;
+    case OverlayAnchor::BottomCenter:
+        x = midX - width / 2;
+        y = work.bottom - height - margin;
+        break;
+    case OverlayAnchor::BottomRight:
+        x = work.right - width - margin;
+        y = work.bottom - height - margin;
+        break;
+    case OverlayAnchor::Mouse:
+        x = cursor.x - width / 2;
+        y = cursor.y - height - 12;
+        if (y < work.top)
+            y = cursor.y + 24;
+        break;
+    case OverlayAnchor::Center:
+    default:
+        break;
+    }
+
+    x += offsetX;
+    y += offsetY;
+
+    const int hoverBand = monitor.bottom > work.bottom ? monitor.bottom - work.bottom : 0;
+    if (hoverBand > 0 && y + height > work.bottom - hoverBand) {
+        y = work.bottom - hoverBand - height;
+        if (y < work.top)
+            y = work.top;
+    }
+
+    if (x + width > work.right)
+        x = work.right - width;
+    if (x < work.left)
+        x = work.left;
+    if (y + height > work.bottom)
+        y = work.bottom - height;
+    if (y < work.top)
+        y = work.top;
+    return RECT { x, y, x + width, y + height };
+}
+
 class Overlay {
 public:
     Overlay() = default;
@@ -58,6 +141,7 @@ private:
 
     HWND m_hwnd = nullptr;
     int m_durationMs = 600;
+    ULONGLONG m_hideAt = 0; // tick the current presentation hides at
     bool m_valueMode = false;
     std::wstring m_text;
     std::wstring m_label;

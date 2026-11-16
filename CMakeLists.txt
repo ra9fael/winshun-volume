@@ -60,6 +60,7 @@ add_executable(tvb_tests
     tests/test_mouse_logic.cpp
     tests/test_sessions.cpp
     tests/test_volume_ops.cpp
+    tests/test_overlay.cpp
     src/mouse_logic.cpp
     src/audio_controller.cpp
 )

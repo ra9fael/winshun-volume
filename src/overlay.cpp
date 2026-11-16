@@ -77,9 +77,7 @@ void Overlay::showValue(const std::wstring& label, int percent, const OverlayPla
     present(placement, ms);
 }
 
-// Places the panel on the monitor the pointer is on. Fixed anchors use the
-// work area (so the taskbar itself never covers the panel); the `mouse`
-// anchor keeps the old follow-the-pointer behavior.
+// Places the panel on the monitor the pointer is on (geometry in overlayRect).
 void Overlay::present(const OverlayPlacement& placement, int ms)
 {
     m_durationMs = ms;
@@ -87,78 +85,23 @@ void Overlay::present(const OverlayPlacement& placement, int ms)
     POINT cursor;
     ::GetCursorPos(&cursor);
 
-    RECT bounds { 0, 0, ::GetSystemMetrics(SM_CXSCREEN), ::GetSystemMetrics(SM_CYSCREEN) };
+    RECT work { 0, 0, ::GetSystemMetrics(SM_CXSCREEN), ::GetSystemMetrics(SM_CYSCREEN) };
+    RECT monitor = work;
     MONITORINFO mi { sizeof mi };
-    if (::GetMonitorInfoW(::MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST), &mi))
-        bounds = mi.rcWork;
-
-    const int midX = bounds.left + (bounds.right - bounds.left) / 2;
-    const int midY = bounds.top + (bounds.bottom - bounds.top) / 2;
-    const int w = m_valueMode ? kWidth : kTextWidth;
-    const int h = m_valueMode ? kHeight : kTextHeight;
-    const int margin = 24;
-    int x = midX - w / 2;
-    int y = midY - h / 2;
-
-    switch (placement.anchor) {
-    case OverlayAnchor::TopLeft:
-        x = bounds.left + margin;
-        y = bounds.top + margin;
-        break;
-    case OverlayAnchor::TopCenter:
-        x = midX - w / 2;
-        y = bounds.top + margin;
-        break;
-    case OverlayAnchor::TopRight:
-        x = bounds.right - w - margin;
-        y = bounds.top + margin;
-        break;
-    case OverlayAnchor::MiddleLeft:
-        x = bounds.left + margin;
-        y = midY - h / 2;
-        break;
-    case OverlayAnchor::MiddleRight:
-        x = bounds.right - w - margin;
-        y = midY - h / 2;
-        break;
-    case OverlayAnchor::BottomLeft:
-        x = bounds.left + margin;
-        y = bounds.bottom - h - margin;
-        break;
-    case OverlayAnchor::BottomCenter:
-        x = midX - w / 2;
-        y = bounds.bottom - h - margin;
-        break;
-    case OverlayAnchor::BottomRight:
-        x = bounds.right - w - margin;
-        y = bounds.bottom - h - margin;
-        break;
-    case OverlayAnchor::Mouse:
-        x = cursor.x - w / 2;
-        y = cursor.y - h - 12;
-        if (y < bounds.top)
-            y = cursor.y + 24;
-        break;
-    case OverlayAnchor::Center:
-    default:
-        break;
+    if (::GetMonitorInfoW(::MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST), &mi)) {
+        work = mi.rcWork;
+        monitor = mi.rcMonitor;
     }
 
-    x += placement.offsetX;
-    y += placement.offsetY;
+    const int w = m_valueMode ? kWidth : kTextWidth;
+    const int h = m_valueMode ? kHeight : kTextHeight;
+    const RECT rc = overlayRect(placement.anchor, placement.offsetX, placement.offsetY,
+        w, h, cursor, work, monitor);
 
-    if (x + w > bounds.right)
-        x = bounds.right - w;
-    if (x < bounds.left)
-        x = bounds.left;
-    if (y + h > bounds.bottom)
-        y = bounds.bottom - h;
-    if (y < bounds.top)
-        y = bounds.top;
-
-    ::SetWindowPos(m_hwnd, HWND_TOPMOST, x, y, w, h,
+    ::SetWindowPos(m_hwnd, HWND_TOPMOST, rc.left, rc.top, w, h,
         SWP_NOACTIVATE | SWP_SHOWWINDOW);
     ::SetTimer(m_hwnd, kHideTimer, static_cast<UINT>(ms), nullptr);
+    m_hideAt = ::GetTickCount64() + static_cast<ULONGLONG>(ms);
     ::InvalidateRect(m_hwnd, nullptr, TRUE);
 }
 
@@ -267,8 +210,19 @@ LRESULT Overlay::proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_TIMER:
         if (wp == kHideTimer) {
-            ::KillTimer(hwnd, kHideTimer);
-            ::ShowWindow(hwnd, SW_HIDE);
+            // Resetting the timer with SetTimer does not promise that a
+            // WM_TIMER already queued for the old deadline is withdrawn; one
+            // arriving late would hide a panel that a fresh wheel step just
+            // updated. Hide only once the recorded deadline really passed,
+            // otherwise re-arm for the remaining time.
+            const ULONGLONG now = ::GetTickCount64();
+            if (now >= m_hideAt) {
+                ::KillTimer(hwnd, kHideTimer);
+                ::ShowWindow(hwnd, SW_HIDE);
+            } else {
+                ::SetTimer(hwnd, kHideTimer,
+                    static_cast<UINT>(m_hideAt - now), nullptr);
+            }
         }
         return 0;
     default:
